@@ -5,14 +5,18 @@ from Plot.AnimatePlotDriver import CAnimateDriver
 from Plot.PlotDriver import CPlotDriver
 
 if __name__ == "__main__":
-    code = "sz.300454"
-    begin_time = "2018-01-01"
+    #code = "sz.159915"
+    code = "上证指数"
+    begin_time = "1980-01-01"
     end_time = None
     data_src = DATA_SRC.QSTOCK
-    # 级别从大到小
+    # 级别从大到小，如果涉及到日级以内，时间不要超过3个月
     lv_list = [ 
+        KL_TYPE.K_MON,
+        KL_TYPE.K_WEEK,
         KL_TYPE.K_DAY,
-        #KL_TYPE.K_30M
+        #KL_TYPE.K_30M,
+        #KL_TYPE.K_15M,
     ]
 
     config = CChanConfig({
@@ -50,24 +54,6 @@ if __name__ == "__main__":
         "plot_kdj": False,
     }
 
-    plot_para = {
-        "seg": {
-            "plot_trendline": True,
-        },
-        "bi": {
-            #"show_num": True,
-            "disp_end": True,
-        },
-        "figure": {
-            "x_range": 200,
-        },
-        "marker": {
-            # "markers": {  # text, position, color
-            #     '2023/06/01': ('marker here', 'up', 'red'),
-            #     '2023/06/08': ('marker here', 'down')
-            # },
-        }
-    }
     chan = CChan(
         code=code,
         begin_time=begin_time,
@@ -78,6 +64,25 @@ if __name__ == "__main__":
         autype=AUTYPE.QFQ,
     )
 
+    plot_para = {
+        "seg": {
+            "plot_trendline": True,
+        },
+        "bi": {
+            #"show_num": True,
+            "disp_end": True,
+        },
+        "figure": {
+            "x_range": chan.get_max_kline_range(),
+        },
+        "marker": {
+            # "markers": {  # text, position, color
+            #     '2023/06/01': ('marker here', 'up', 'red'),
+            #     '2023/06/08': ('marker here', 'down')
+            # },
+        }
+    }
+
     if not config.trigger_step:
         plot_driver = CPlotDriver(
             chan,
@@ -87,6 +92,7 @@ if __name__ == "__main__":
         plot_driver.figure.show()
         kltype = [ str(x) for x in lv_list ]
         png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}.png"
+        
         plot_driver.save2img(png_name)
     else:
         CAnimateDriver(

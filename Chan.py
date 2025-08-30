@@ -46,6 +46,8 @@ class CChan:
 
         self.g_kl_iter = defaultdict(list)
 
+        self.kline_range: Dict[KL_TYPE, int] = {}
+
         self.do_init()
 
         if not config.trigger_step:
@@ -252,6 +254,11 @@ class CChan:
                     if not kline_unit.time > self.klu_last_t[lv_idx]:
                         raise CChanException(f"kline time err, cur={kline_unit.time}, last={self.klu_last_t[lv_idx]}, or refer to quick_guide.md, try set auto=False in the CTime returned by your data source class", ErrCode.KL_NOT_MONOTONOUS)
                     self.klu_last_t[lv_idx] = kline_unit.time
+
+                    # 统计K线数量
+                    if cur_lv not in self.kline_range:
+                        self.kline_range[cur_lv] = 0
+                    self.kline_range[cur_lv] += 1
                 except StopIteration:
                     break
 
@@ -373,3 +380,19 @@ class CChan:
                 last_segseg = segseg
 
         return chan
+    
+    # 获取K线最大范围
+    def get_max_kline_range(self)-> int:
+        max_kline_range = 0
+        for kl_range in self.kline_range.values():
+            if kl_range > max_kline_range:
+                max_kline_range = kl_range
+        return max_kline_range
+    
+    # 获取K线最小范围
+    def get_min_kline_range(self)-> int:
+        min_kline_range = 0
+        for kl_range in self.kline_range.values():
+            if kl_range < min_kline_range:
+                min_kline_range = kl_range
+        return min_kline_range
