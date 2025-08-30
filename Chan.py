@@ -173,6 +173,9 @@ class CChan:
         if self.data_src == DATA_SRC.BAO_STOCK:
             from DataAPI.BaoStockAPI import CBaoStock
             _dict[DATA_SRC.BAO_STOCK] = CBaoStock
+        elif self.data_src == DATA_SRC.QSTOCK:
+            from DataAPI.QStockAPI import CQStock
+            _dict[DATA_SRC.QSTOCK] = CQStock
         elif self.data_src == DATA_SRC.CCXT:
             from DataAPI.ccxt import CCXT
             _dict[DATA_SRC.CCXT] = CCXT

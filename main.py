@@ -5,11 +5,15 @@ from Plot.AnimatePlotDriver import CAnimateDriver
 from Plot.PlotDriver import CPlotDriver
 
 if __name__ == "__main__":
-    code = "sz.000001"
-    begin_time = "2018-01-01"
+    code = "sz.588000"
+    begin_time = "2025-01-01"
     end_time = None
-    data_src = DATA_SRC.BAO_STOCK
-    lv_list = [KL_TYPE.K_DAY]
+    data_src = DATA_SRC.QSTOCK
+    # 级别从大到小
+    lv_list = [ 
+        #KL_TYPE.K_WEEK,
+        KL_TYPE.K_DAY
+    ]
 
     config = CChanConfig({
         "bi_strict": True,
@@ -24,6 +28,8 @@ if __name__ == "__main__":
         "bs_type": '1,2,3a,1p,2s,3b',
         "print_warning": True,
         "zs_algo": "normal",
+        "cal_rsi": True,
+        "cal_kdj": True,
     })
 
     plot_config = {
@@ -33,7 +39,7 @@ if __name__ == "__main__":
         "plot_seg": True,
         "plot_eigen": False,
         "plot_zs": True,
-        "plot_macd": False,
+        "plot_macd": True,
         "plot_mean": False,
         "plot_channel": False,
         "plot_bsp": True,
@@ -46,14 +52,14 @@ if __name__ == "__main__":
 
     plot_para = {
         "seg": {
-            # "plot_trendline": True,
+            "plot_trendline": True,
         },
         "bi": {
-            # "show_num": True,
-            # "disp_end": True,
+            #"show_num": True,
+            "disp_end": True,
         },
         "figure": {
-            "x_range": 200,
+            "x_range": 300,
         },
         "marker": {
             # "markers": {  # text, position, color
@@ -79,7 +85,7 @@ if __name__ == "__main__":
             plot_para=plot_para,
         )
         plot_driver.figure.show()
-        plot_driver.save2img("./test.png")
+        plot_driver.save2img(f"{code}-{begin_time}.png")
     else:
         CAnimateDriver(
             chan,
