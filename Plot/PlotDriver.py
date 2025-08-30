@@ -287,6 +287,11 @@ class CPlotDriver:
     def save2img(self, path):
         plt.savefig(path, bbox_inches='tight')
 
+    def save2html_mpld3(self, path):
+        import mpld3 as mpld
+        with open(path, 'w') as f:
+            f.write(mpld.fig_to_html(self.figure))
+
     def draw_klu(self, meta: CChanPlotMeta, ax: Axes, width=0.4, rugd=True, plot_mode="kl"):
         # rugd: red up green down
         up_color = 'r' if rugd else 'g'

@@ -6,14 +6,15 @@ from Plot.PlotDriver import CPlotDriver
 
 if __name__ == "__main__":
     #code = "sz.159915"
-    code = "上证指数"
-    begin_time = "1980-01-01"
+    #code = "上证指数"
+    code = "sz.510050"
+    begin_time = "2024-01-01"
     end_time = None
     data_src = DATA_SRC.QSTOCK
     # 级别从大到小，如果涉及到日级以内，时间不要超过3个月
     lv_list = [ 
-        KL_TYPE.K_MON,
-        KL_TYPE.K_WEEK,
+        #KL_TYPE.K_MON,
+        #KL_TYPE.K_WEEK,
         KL_TYPE.K_DAY,
         #KL_TYPE.K_30M,
         #KL_TYPE.K_15M,
@@ -24,16 +25,18 @@ if __name__ == "__main__":
         "trigger_step": False,
         "skip_step": 0,
         "divergence_rate": float("inf"),
-        "bsp2_follow_1": False,
-        "bsp3_follow_1": False,
+        "bsp2_follow_1": True,
+        "bsp3_follow_1": True,
         "min_zs_cnt": 0,
-        "bs1_peak": False,
+        "bs1_peak": True,
         "macd_algo": "peak",
         "bs_type": '1,2,3a,1p,2s,3b',
         "print_warning": True,
         "zs_algo": "normal",
         "cal_rsi": True,
         "cal_kdj": True,
+        "cal_demark": True,
+        "boll_n": 20,
     })
 
     plot_config = {
@@ -52,6 +55,8 @@ if __name__ == "__main__":
         "plot_marker": False,
         "plot_rsi": False,
         "plot_kdj": False,
+        "plot_boll": True,
+
     }
 
     chan = CChan(
@@ -90,10 +95,13 @@ if __name__ == "__main__":
             plot_para=plot_para,
         )
         plot_driver.figure.show()
+
         kltype = [ str(x) for x in lv_list ]
-        png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}.png"
+        png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}"
         
-        plot_driver.save2img(png_name)
+        plot_driver.save2img(f"{png_name}.png")
+        #plot_driver.save2html_mpld3(f"{png_name}.html")
+        input("Press Enter to continue...")
     else:
         CAnimateDriver(
             chan,
