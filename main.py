@@ -5,14 +5,14 @@ from Plot.AnimatePlotDriver import CAnimateDriver
 from Plot.PlotDriver import CPlotDriver
 
 if __name__ == "__main__":
-    code = "sz.588000"
+    code = "sz.510300"
     begin_time = "2025-01-01"
     end_time = None
     data_src = DATA_SRC.QSTOCK
     # 级别从大到小
     lv_list = [ 
-        #KL_TYPE.K_WEEK,
-        KL_TYPE.K_DAY
+        #KL_TYPE.K_DAY,
+        KL_TYPE.K_30M
     ]
 
     config = CChanConfig({
@@ -59,7 +59,7 @@ if __name__ == "__main__":
             "disp_end": True,
         },
         "figure": {
-            "x_range": 300,
+            "x_range": 500,
         },
         "marker": {
             # "markers": {  # text, position, color

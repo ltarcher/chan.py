@@ -70,7 +70,7 @@ class CQStock(CCommonStockApi):
                 data[i] = self.parse_time_column(data[i])
             # 第2、3列分别是股票名称和代码，不处理
             elif i > 2:
-                str2float(data[i])
+                data[i] = str2float(data[i])
         return dict(zip(column_name, data))
     
     def parse_time_column(self, timestamp):
@@ -90,6 +90,10 @@ class CQStock(CCommonStockApi):
                            freq=self.GetKLType(self.k_type), 
                            fqt=self.GetAutype(self.autype))
         data.reset_index(inplace=True)
+        #如果是1分钟数据，则需要处理成交量列从vol转为volume
+        if self.k_type == KL_TYPE.K_1M:
+            data.rename(columns={'vol': 'volume'}, inplace=True)
+
         #DataFrame转换为KLine_Unit
         #data是DataFrame
         for index, item in data.iterrows():
@@ -101,7 +105,7 @@ class CQStock(CCommonStockApi):
                 item['close'],
                 item['volume'],
                 item['turnover'],
-                item['turnover_rate'],
+                item['turnover_rate'] if 'turnover_rate' in data.columns else 0,#1分钟线没有turnover_rate列
             ]
             yield CKLine_Unit(self.create_item_dict(item_data, self.GetColumnNameFromFieldList(data.columns)), autofix=True)
 
