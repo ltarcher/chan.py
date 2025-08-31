@@ -6,6 +6,8 @@ from ChanConfig import CChanConfig
 from Common.CEnum import AUTYPE, DATA_SRC, KL_TYPE
 from Strategy.BaseStrategy import CBaseStrategy
 from DataAPI.BaoStockAPI import CBaoStock
+from DataAPI.QStockAPI import CQStock
+from DataAPI.csvAPI import CSV_API
 from KLine.KLine_Unit import CKLine_Unit
 
 
@@ -250,15 +252,43 @@ class CAdvancedBacktester:
             autype=autype,
         )
 
-        # 初始化数据源
-        CBaoStock.do_init()
-        data_src = CBaoStock(
-            code=code,
-            k_type=lv_list[0],
-            begin_date=begin_time,
-            end_date=end_time,
-            autype=autype
-        )
+        # 根据数据源类型初始化相应的数据源
+        if data_src_type == DATA_SRC.BAO_STOCK:
+            CBaoStock.do_init()
+            data_src = CBaoStock(
+                code=code,
+                k_type=lv_list[0],
+                begin_date=begin_time,
+                end_date=end_time,
+                autype=autype
+            )
+        elif data_src_type == DATA_SRC.QSTOCK:
+            CQStock.do_init()
+            data_src = CQStock(
+                code=code,
+                k_type=lv_list[0],
+                begin_date=begin_time,
+                end_date=end_time,
+                autype=autype
+            )
+        elif data_src_type == DATA_SRC.CSV:
+            data_src = CSV_API(
+                code=code,
+                k_type=lv_list[0],
+                begin_date=begin_time,
+                end_date=end_time,
+                autype=autype
+            )
+        else:
+            # 默认使用BaoStock
+            CBaoStock.do_init()
+            data_src = CBaoStock(
+                code=code,
+                k_type=lv_list[0],
+                begin_date=begin_time,
+                end_date=end_time,
+                autype=autype
+            )
 
         # 用于统计
         total_trades = 0
