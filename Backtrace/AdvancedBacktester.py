@@ -253,42 +253,47 @@ class CAdvancedBacktester:
         )
 
         # 根据数据源类型初始化相应的数据源
+        data_src_dict = {}
         if data_src_type == DATA_SRC.BAO_STOCK:
             CBaoStock.do_init()
-            data_src = CBaoStock(
-                code=code,
-                k_type=lv_list[0],
-                begin_date=begin_time,
-                end_date=end_time,
-                autype=autype
-            )
+            for lv in lv_list:
+                data_src_dict[lv] = CBaoStock(
+                    code=code,
+                    k_type=lv,
+                    begin_date=begin_time,
+                    end_date=end_time,
+                    autype=autype
+                )
         elif data_src_type == DATA_SRC.QSTOCK:
             CQStock.do_init()
-            data_src = CQStock(
-                code=code,
-                k_type=lv_list[0],
-                begin_date=begin_time,
-                end_date=end_time,
-                autype=autype
-            )
+            for lv in lv_list:
+                data_src_dict[lv] = CQStock(
+                    code=code,
+                    k_type=lv,
+                    begin_date=begin_time,
+                    end_date=end_time,
+                    autype=autype
+                )
         elif data_src_type == DATA_SRC.CSV:
-            data_src = CSV_API(
-                code=code,
-                k_type=lv_list[0],
-                begin_date=begin_time,
-                end_date=end_time,
-                autype=autype
-            )
+            for lv in lv_list:
+                data_src_dict[lv] = CSV_API(
+                    code=code,
+                    k_type=lv,
+                    begin_date=begin_time,
+                    end_date=end_time,
+                    autype=autype
+                )
         else:
             # 默认使用BaoStock
             CBaoStock.do_init()
-            data_src = CBaoStock(
-                code=code,
-                k_type=lv_list[0],
-                begin_date=begin_time,
-                end_date=end_time,
-                autype=autype
-            )
+            for lv in lv_list:
+                data_src_dict[lv] = CBaoStock(
+                    code=code,
+                    k_type=lv,
+                    begin_date=begin_time,
+                    end_date=end_time,
+                    autype=autype
+                )
 
         # 用于统计
         total_trades = 0
@@ -297,27 +302,87 @@ class CAdvancedBacktester:
         max_drawdown = 0.0
         peak_capital = capital
 
-        # 获取数据并逐步执行策略
-        for klu in data_src.get_kl_data():
-            chan.trigger_load({lv_list[0]: [klu]})
-            self.strategy.on_bar(chan, lv_list[0])
-            
-            # 更新资金曲线
-            current_time = klu.time
-            current_price = klu.close
-            
-            # 计算当前权益
-            current_equity = self.calculate_equity(current_price)
-            self.equity_curve.append((current_time, current_equity))
-            self.history_capital.append(current_equity)
-            
-            # 计算最大回撤
-            if current_equity > peak_capital:
-                peak_capital = current_equity
-            drawdown = (peak_capital - current_equity) / peak_capital * 100 if peak_capital > 0 else 0
-            max_drawdown = max(max_drawdown, drawdown)
+        # 获取所有级别的数据
+        kl_data_dict = {lv: list(data_src_dict[lv].get_kl_data()) for lv in lv_list}
+        
+        # 特殊处理：对于多级别分析，第一根K线需要喂入所有级别的数据
+        if len(lv_list) > 1:
+            main_lv = lv_list[0]
+            if kl_data_dict[main_lv]:  # 检查是否存在主级别数据
+                first_klu = kl_data_dict[main_lv][0]
+                trigger_data = {main_lv: [first_klu]}
+                # 将所有次级别的数据也一并喂入
+                for lv in lv_list[1:]:
+                    trigger_data[lv] = kl_data_dict[lv]
+                chan.trigger_load(trigger_data)
+                self.strategy.on_bar(chan, main_lv)
+                
+                # 更新资金曲线
+                current_time = first_klu.time
+                current_price = first_klu.close
+                
+                # 计算当前权益
+                current_equity = self.calculate_equity(current_price)
+                self.equity_curve.append((current_time, current_equity))
+                self.history_capital.append(current_equity)
+                
+                # 计算最大回撤
+                if current_equity > peak_capital:
+                    peak_capital = current_equity
+                drawdown = (peak_capital - current_equity) / peak_capital * 100 if peak_capital > 0 else 0
+                max_drawdown = max(max_drawdown, drawdown)
 
-        CBaoStock.do_close()
+            # 处理剩余的K线数据
+            for klu in kl_data_dict[main_lv][1:]:  # 从第二根K线开始
+                chan.trigger_load({main_lv: [klu]})
+                self.strategy.on_bar(chan, main_lv)
+                
+                # 更新资金曲线
+                current_time = klu.time
+                current_price = klu.close
+                
+                # 计算当前权益
+                current_equity = self.calculate_equity(current_price)
+                self.equity_curve.append((current_time, current_equity))
+                self.history_capital.append(current_equity)
+                
+                # 计算最大回撤
+                if current_equity > peak_capital:
+                    peak_capital = current_equity
+                drawdown = (peak_capital - current_equity) / peak_capital * 100 if peak_capital > 0 else 0
+                max_drawdown = max(max_drawdown, drawdown)
+        else:
+            # 单级别处理
+            main_lv = lv_list[0]
+            for klu in kl_data_dict[main_lv]:
+                chan.trigger_load({main_lv: [klu]})
+                self.strategy.on_bar(chan, main_lv)
+                
+                # 更新资金曲线
+                current_time = klu.time
+                current_price = klu.close
+                
+                # 计算当前权益
+                current_equity = self.calculate_equity(current_price)
+                self.equity_curve.append((current_time, current_equity))
+                self.history_capital.append(current_equity)
+                
+                # 计算最大回撤
+                if current_equity > peak_capital:
+                    peak_capital = current_equity
+                drawdown = (peak_capital - current_equity) / peak_capital * 100 if peak_capital > 0 else 0
+                max_drawdown = max(max_drawdown, drawdown)
+
+        # 根据数据源类型关闭相应的数据源
+        if data_src_type == DATA_SRC.BAO_STOCK:
+            CBaoStock.do_close()
+        elif data_src_type == DATA_SRC.QSTOCK:
+            CQStock.do_close()
+        elif data_src_type == DATA_SRC.CSV:
+            CSV_API.do_close()  # 调用CSV数据源的关闭方法
+        else:
+            # 默认使用BaoStock
+            CBaoStock.do_close()
 
         # 统计结果
         transactions = self.strategy.get_transactions()

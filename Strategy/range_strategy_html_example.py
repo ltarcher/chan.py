@@ -19,11 +19,11 @@ def run_range_strategy_with_html_report():
     运行区间套策略回测并生成HTML报告
     """
     # 配置参数
-    code = "sz.510050"  # 50ETF
-    begin_time = "2024-01-01"
-    end_time = "2024-06-30"
+    code = "sz.300454"  # 平安银行
+    begin_time = "2025-08-01"
+    end_time = "2025-12-31"
     data_src = DATA_SRC.QSTOCK
-    lv_list = [KL_TYPE.K_DAY, KL_TYPE.K_60M]  # 日线和60分钟线构成区间套
+    lv_list = [KL_TYPE.K_DAY, KL_TYPE.K_30M]  # 日线和30分钟线构成区间套
 
     # 缠论配置
     config = CChanConfig({
@@ -80,11 +80,11 @@ def run_range_vs_other_strategies_comparison():
     from Strategy.MACrossStrategy import CMACrossStrategy
     
     # 配置参数
-    code = "sz.510050"  # 50ETF
-    begin_time = "2024-01-01"
-    end_time = "2024-06-30"
-    data_src = DATA_SRC.QSTOCK
-    lv_list = [KL_TYPE.K_DAY, KL_TYPE.K_60M]  # 日线和60分钟线构成区间套
+    code = "sz.300454"  # 平安银行
+    begin_time = "2023-01-01"
+    end_time = "2025-12-31"
+    data_src = DATA_SRC.BAO_STOCK
+    lv_list = [KL_TYPE.K_DAY, KL_TYPE.K_30M]  # 日线和30分钟线构成区间套
 
     # 缠论配置
     chan_config = CChanConfig({

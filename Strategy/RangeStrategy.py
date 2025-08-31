@@ -89,14 +89,14 @@ class CRangeStrategy(CBaseStrategy):
     def _check_range_confirmation(self, chan: CChan, bsp: CBS_Point) -> bool:
         """
         检查区间套确认
-        在高级别出现买卖点时，需要在低级别得到确认
+        在高级别出现买卖点时，需要在低级别得到确认才能交易
         :param chan: CChan实例
         :param bsp: 高级别买卖点
         :return: 是否通过区间套确认
         """
-        # 如果只有一个级别，直接通过确认
+        # 检查是否为多级别分析
         if len(chan.lv_list) < 2:
-            return True
+            return True  # 单级别分析直接返回True
             
         # 获取高级别和次级别
         high_lv = chan.lv_list[0]   # 高级别
@@ -112,7 +112,7 @@ class CRangeStrategy(CBaseStrategy):
         high_bsp_klu = bsp.klu
         
         # 查找次级别中与高级别买卖点K线对应的K线段
-        for low_bsp in low_lv_chan.bs_point_lst:
+        for low_bsp in low_lv_chan.bs_point_lst.bsp_iter():
             # 检查次级别的买卖点是否是1类买卖点
             if BSP_TYPE.T1 not in low_bsp.type and BSP_TYPE.T1P not in low_bsp.type:
                 continue
