@@ -10,6 +10,7 @@ from Strategy.bsp_strategy_example import run_bsp_strategy_backtest
 from Strategy.advanced_bsp_example import run_advanced_bsp_strategy_backtest, run_compare_strategies
 from Strategy.strategy_example import run_simple_backtest
 from Strategy.advanced_strategy_example import run_advanced_backtest
+from Backtrace.html_visualization_example import run_backtest_with_html_report, run_multiple_strategies_comparison
 
 
 def main():
@@ -23,9 +24,11 @@ def main():
         print("3. 策略对比测试")
         print("4. 基础技术指标策略")
         print("5. 高级技术指标策略")
+        print("6. 生成HTML可视化报告")
+        print("7. 生成策略对比HTML报告")
         print("0. 退出")
         
-        choice = input("\n请输入选择 (0-5): ").strip()
+        choice = input("\n请输入选择 (0-7): ").strip()
         
         if choice == "1":
             print("\n运行基础缠论买卖点策略...")
@@ -42,6 +45,12 @@ def main():
         elif choice == "5":
             print("\n运行高级技术指标策略...")
             run_advanced_backtest()
+        elif choice == "6":
+            print("\n生成HTML可视化报告...")
+            run_backtest_with_html_report()
+        elif choice == "7":
+            print("\n生成策略对比HTML报告...")
+            run_multiple_strategies_comparison()
         elif choice == "0":
             print("退出程序")
             break

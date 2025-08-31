@@ -14,16 +14,18 @@ class CSimpleBacktester:
     简单回测引擎
     """
 
-    def __init__(self, strategy: CBaseStrategy):
+    def __init__(self, strategy: CBaseStrategy, result_dir: str = "backtest_results"):
         """
         初始化回测引擎
         :param strategy: 策略实例
+        :param result_dir: 结果保存目录
         """
         self.strategy = strategy
         self.initial_capital = 100000  # 初始资金
         self.current_capital = self.initial_capital  # 当前资金
         self.history_capital = [self.initial_capital]  # 资金历史
         self.positions = []  # 持仓记录
+        self.result_dir = result_dir
 
     def run_backtest(
             self,
@@ -113,7 +115,10 @@ class CSimpleBacktester:
             "win_rate": win_rate,
             "total_profit": total_profit,
             "avg_profit": avg_profit,
-            "transactions": transactions
+            "transactions": transactions,
+            "code": code,
+            "begin_time": begin_time,
+            "end_time": end_time
         }
 
         print(f"回测完成:")
@@ -226,7 +231,10 @@ class CSimpleBacktester:
             "win_rate": win_rate,
             "total_profit": total_profit,
             "avg_profit": avg_profit,
-            "transactions": transactions
+            "transactions": transactions,
+            "code": code,
+            "begin_time": begin_time,
+            "end_time": end_time
         }
 
         print(f"回测完成:")

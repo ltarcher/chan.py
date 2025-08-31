@@ -14,10 +14,11 @@ class CAdvancedBacktester:
     高级回测引擎，支持更多功能
     """
 
-    def __init__(self, strategy: CBaseStrategy):
+    def __init__(self, strategy: CBaseStrategy, result_dir: str = "backtest_results"):
         """
         初始化回测引擎
         :param strategy: 策略实例
+        :param result_dir: 结果保存目录
         """
         self.strategy = strategy
         self.initial_capital = 100000  # 初始资金
@@ -25,6 +26,7 @@ class CAdvancedBacktester:
         self.history_capital = [self.initial_capital]  # 资金历史
         self.positions = []  # 持仓记录
         self.equity_curve = []  # 权益曲线
+        self.result_dir = result_dir
 
     def run_backtest(
             self,
@@ -128,7 +130,10 @@ class CAdvancedBacktester:
             "max_drawdown": max_drawdown,
             "sharpe_ratio": sharpe_ratio,
             "transactions": transactions,
-            "equity_curve": self.equity_curve
+            "equity_curve": self.equity_curve,
+            "code": code,
+            "begin_time": begin_time,
+            "end_time": end_time
         }
 
         print(f"回测完成:")
@@ -316,7 +321,10 @@ class CAdvancedBacktester:
             "max_drawdown": max_drawdown,
             "sharpe_ratio": sharpe_ratio,
             "transactions": transactions,
-            "equity_curve": self.equity_curve
+            "equity_curve": self.equity_curve,
+            "code": code,
+            "begin_time": begin_time,
+            "end_time": end_time
         }
 
         print(f"回测完成:")

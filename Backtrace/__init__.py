@@ -2,5 +2,6 @@
 
 from .SimpleBacktester import CSimpleBacktester
 from .AdvancedBacktester import CAdvancedBacktester
+from .HTMLVisualization import CHTMLVisualization
 
-__all__ = ['CSimpleBacktester', 'CAdvancedBacktester']
+__all__ = ['CSimpleBacktester', 'CAdvancedBacktester', 'CHTMLVisualization']
