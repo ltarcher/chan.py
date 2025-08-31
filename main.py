@@ -98,7 +98,7 @@ if __name__ == "__main__":
         plotly_driver = CPlotlyDriver(chan, plot_config=plot_config, plot_para=plot_para)
         #plotly_driver.show()
         #plotly_driver.save2img(f'{png_name}.png')  # 保存为图片文件
-        plotly_driver.save2html(f'{png_name}.html')  # 保存为HTML文件
+        plotly_driver.savefig(f'{png_name}.html')  # 保存为HTML文件
         '''
         plot_driver = CPlotDriver(
             chan,
