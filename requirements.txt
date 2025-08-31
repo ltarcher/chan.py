@@ -4,3 +4,5 @@ baostock
 qstock==1.3.5
 retry
 mpld3
+nbformat
+kaleido

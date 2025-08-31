@@ -3,6 +3,8 @@ from ChanConfig import CChanConfig
 from Common.CEnum import AUTYPE, DATA_SRC, KL_TYPE
 from Plot.AnimatePlotDriver import CAnimateDriver
 from Plot.PlotDriver import CPlotDriver
+from Plot.PlotlyDriver import CPlotlyDriver
+import sys
 
 if __name__ == "__main__":
     #code = "sz.159915"
@@ -14,7 +16,7 @@ if __name__ == "__main__":
     # 级别从大到小，如果涉及到日级以内，时间不要超过3个月
     lv_list = [ 
         #KL_TYPE.K_MON,
-        #KL_TYPE.K_WEEK,
+        KL_TYPE.K_WEEK,
         KL_TYPE.K_DAY,
         #KL_TYPE.K_30M,
         #KL_TYPE.K_15M,
@@ -89,19 +91,26 @@ if __name__ == "__main__":
     }
 
     if not config.trigger_step:
+        kltype = [ str(x) for x in lv_list ]
+        png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}"
+
+        # chan 是已经计算完成的 CChan 实例
+        plotly_driver = CPlotlyDriver(chan, plot_config=plot_config, plot_para=plot_para)
+        #plotly_driver.show()
+        #plotly_driver.save2img(f'{png_name}.png')  # 保存为图片文件
+        plotly_driver.save2html(f'{png_name}.html')  # 保存为HTML文件
+        '''
         plot_driver = CPlotDriver(
             chan,
             plot_config=plot_config,
             plot_para=plot_para,
         )
         plot_driver.figure.show()
-
-        kltype = [ str(x) for x in lv_list ]
-        png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}"
         
         plot_driver.save2img(f"{png_name}.png")
         #plot_driver.save2html_mpld3(f"{png_name}.html")
-        input("Press Enter to continue...")
+        #input("Press Enter to continue...")
+        '''
     else:
         CAnimateDriver(
             chan,
