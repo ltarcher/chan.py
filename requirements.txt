@@ -7,3 +7,4 @@ mpld3
 nbformat
 kaleido
 PyExecJS
+websockets

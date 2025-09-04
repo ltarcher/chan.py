@@ -13,13 +13,26 @@ from Plot.PlotlyDriver import CPlotlyDriver
 from WeChatNotify.wxpusher import Wxpusher
 import qstock as qs
 
+try:
+    import asyncio
+    import websockets
+    from threading import Thread
+    WEBSOCKET_AVAILABLE = True
+except ImportError:
+    WEBSOCKET_AVAILABLE = False
+    print("WebSocket依赖未安装，将不启用WebSocket服务器功能")
+
 
 class RealtimeMonitor:
-    def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True):
+    def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True, 
+                 enable_websocket=False, websocket_host="localhost", websocket_port=8765):
         self.codes = codes if isinstance(codes, list) else [codes]
         self.data_src = data_src
         self.debug = debug
         self.generate_visualization = generate_visualization
+        self.enable_websocket = enable_websocket
+        self.websocket_host = websocket_host
+        self.websocket_port = websocket_port
         self.lv_list = [
             KL_TYPE.K_MON,
             KL_TYPE.K_WEEK,
@@ -103,10 +116,17 @@ class RealtimeMonitor:
         # 用于记录上一次的买卖点，检测变化
         self.previous_bsp = {}
         
+        # WebSocket客户端连接集合
+        self.websocket_clients = set()
+        
         # 创建输出目录
         self.output_path = os.path.join(os.getcwd(), "output")
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
+            
+        # 启动WebSocket服务器
+        if self.enable_websocket and WEBSOCKET_AVAILABLE:
+            self.start_websocket_server()
 
     def get_kline_level_name(self, level):
         """
@@ -555,6 +575,60 @@ class RealtimeMonitor:
                 print(f"已发送信号通知: {title}")
             except Exception as e:
                 print(f"发送微信推送失败: {e}")
+                
+            # 通过WebSocket推送JSON格式的消息
+            if self.enable_websocket:
+                # 构造JSON格式的信号数据
+                signal_data = {
+                    "type": "bsp_signal_update",
+                    "code": code,
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "new_signals": [],
+                    "disappeared_signals": []
+                }
+                
+                # 添加新信号数据
+                for lv, bsp in new_bsps:
+                    price = bsp.klu.close
+                    bsp_types = [self.bsp_type_map.get(t.value, t.value) for t in bsp.type]
+                    signal_data["new_signals"].append({
+                        "level": self.get_kline_level_name(lv),
+                        "time": str(bsp.klu.time),
+                        "price": price,
+                        "bsp_type": bsp_types,
+                        "is_buy": bsp.is_buy,
+                        "operation": "买入" if bsp.is_buy else "卖出"
+                    })
+                
+                # 添加消失的信号数据
+                for bsp_detail in disappeared_bsp_details:
+                    bsp_key = bsp_detail['key']
+                    parts = bsp_key.split("_")
+                    if len(parts) >= 4:
+                        bsp_code, bsp_lv, bsp_time, bsp_type = parts[0], parts[1], parts[2], parts[3]
+                        level_name = self.kline_level_name_map.get(bsp_lv, bsp_lv)
+                        if level_name == bsp_lv:
+                            level_enum = self.level_enum_map.get(bsp_lv)
+                            if level_enum:
+                                level_name = self.get_kline_level_name(level_enum)
+                        
+                        bsp_type_name = self.bsp_type_map.get(bsp_type, bsp_type)
+                        signal_data["disappeared_signals"].append({
+                            "code": bsp_code,
+                            "level": level_name,
+                            "time": bsp_time,
+                            "bsp_type": bsp_type_name,
+                            "is_buy": bsp_detail.get('is_buy', False),
+                            "operation": "买入" if bsp_detail.get('is_buy', False) else "卖出",
+                            "reason": "信号不再满足条件"
+                        })
+                
+                # 广播JSON数据到WebSocket客户端
+                try:
+                    json_message = json.dumps(signal_data, ensure_ascii=False)
+                    self.broadcast_websocket_message(json_message)
+                except Exception as e:
+                    print(f"WebSocket消息推送失败: {e}")
 
     def generate_visualization_for_level(self, code, chan, plot_config, level):
         """
@@ -674,13 +748,75 @@ class RealtimeMonitor:
         # 立即执行一次
         run_periodically()
 
+    def start_websocket_server(self):
+        """
+        启动WebSocket服务器
+        """
+        if not WEBSOCKET_AVAILABLE:
+            print("WebSocket依赖未安装，无法启动WebSocket服务器")
+            return
+            
+        def run_websocket_server():
+            asyncio.set_event_loop(asyncio.new_event_loop())
+            start_server = websockets.serve(self.websocket_handler, self.websocket_host, self.websocket_port)
+            print(f"WebSocket服务器已启动，监听 {self.websocket_host}:{self.websocket_port}")
+            asyncio.get_event_loop().run_until_complete(start_server)
+            asyncio.get_event_loop().run_forever()
+            
+        # 在新线程中启动WebSocket服务器
+        websocket_thread = Thread(target=run_websocket_server, daemon=True)
+        websocket_thread.start()
+
+    async def websocket_handler(self, websocket, path):
+        """
+        WebSocket连接处理函数
+        """
+        # 将新连接添加到客户端集合
+        self.websocket_clients.add(websocket)
+        print(f"新的WebSocket客户端已连接: {websocket.remote_address}")
+        
+        try:
+            async for message in websocket:
+                # 处理客户端发送的消息（如果需要）
+                pass
+        except websockets.exceptions.ConnectionClosed:
+            pass
+        finally:
+            # 连接关闭时从客户端集合中移除
+            self.websocket_clients.remove(websocket)
+            print(f"WebSocket客户端已断开连接: {websocket.remote_address}")
+
+    def broadcast_websocket_message(self, message):
+        """
+        向所有WebSocket客户端广播消息
+        """
+        if not self.enable_websocket or not WEBSOCKET_AVAILABLE:
+            return
+            
+        # 在新线程中发送消息，避免阻塞
+        def send_messages():
+            disconnected_clients = set()
+            for client in self.websocket_clients:
+                try:
+                    asyncio.run_coroutine_threadsafe(client.send(message), asyncio.get_event_loop())
+                except:
+                    disconnected_clients.add(client)
+            
+            # 移除已断开的客户端
+            for client in disconnected_clients:
+                self.websocket_clients.discard(client)
+                
+        # 启动发送线程
+        send_thread = Thread(target=send_messages, daemon=True)
+        send_thread.start()
+
 
 def main():
     # 配置需要监控的股票代码
     codes = ["上证指数", "510050", "510500", "510300"]
     
     # 创建监控实例（debug模式默认关闭，可视化生成默认开启）
-    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False)
+    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False, enable_websocket=True)
     
     # 开始定时监控（每30秒）
     monitor.start_monitoring(30)
