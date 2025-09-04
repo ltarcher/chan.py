@@ -44,6 +44,34 @@
             border: 1px solid #f5c6cb;
         }
         
+        .config-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .config-panel h2 {
+            margin-top: 0;
+            color: #495057;
+        }
+        
+        .config-item {
+            margin-bottom: 10px;
+        }
+        
+        .config-item label {
+            display: inline-block;
+            width: 150px;
+            font-weight: bold;
+        }
+        
+        .config-item input[type="checkbox"] {
+            transform: scale(1.3);
+            margin-right: 10px;
+        }
+        
         .signals-container {
             display: flex;
             gap: 20px;
@@ -94,9 +122,29 @@
             font-size: 0.9em;
         }
         
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .status-connected {
+            background-color: #28a745;
+        }
+        
+        .status-disconnected {
+            background-color: #dc3545;
+        }
+        
         @media (max-width: 768px) {
             .signals-container {
                 flex-direction: column;
+            }
+            
+            .config-item label {
+                width: 120px;
             }
         }
     </style>
@@ -106,7 +154,26 @@
         <h1>缠论买卖点实时监控</h1>
         
         <div id="connectionStatus" class="connection-status disconnected">
-            WebSocket连接状态: 未连接
+            WebSocket连接状态: <span class="status-indicator status-disconnected"></span> 未连接
+        </div>
+        
+        <div class="config-panel">
+            <h2>配置控制面板</h2>
+            <div class="config-item">
+                <label for="debugSwitch">调试模式:</label>
+                <input type="checkbox" id="debugSwitch" onchange="updateWebSocketConfig('debug', this.checked)">
+                <span id="debugStatus">关闭</span>
+            </div>
+            <div class="config-item">
+                <label for="visualizationSwitch">可视化生成:</label>
+                <input type="checkbox" id="visualizationSwitch" onchange="updateWebSocketConfig('generate_visualization', this.checked)" checked>
+                <span id="visualizationStatus">开启</span>
+            </div>
+            <div class="config-item">
+                <label for="messageSwitch">发送微信消息:</label>
+                <input type="checkbox" id="messageSwitch" onchange="updateWebSocketConfig('send_wechat_message', this.checked)" checked>
+                <span id="messageStatus">开启</span>
+            </div>
         </div>
         
         <div class="signals-container">
@@ -214,12 +281,15 @@
             
             updateConnectionStatus(connected) {
                 const statusElement = document.getElementById('connectionStatus');
+                const indicator = statusElement.querySelector('.status-indicator');
                 if (connected) {
                     statusElement.className = 'connection-status connected';
-                    statusElement.textContent = 'WebSocket连接状态: 已连接';
+                    indicator.className = 'status-indicator status-connected';
+                    statusElement.innerHTML = 'WebSocket连接状态: <span class="status-indicator status-connected"></span> 已连接';
                 } else {
                     statusElement.className = 'connection-status disconnected';
-                    statusElement.textContent = 'WebSocket连接状态: 未连接';
+                    indicator.className = 'status-indicator status-disconnected';
+                    statusElement.innerHTML = 'WebSocket连接状态: <span class="status-indicator status-disconnected"></span> 未连接';
                 }
             }
             
@@ -233,7 +303,7 @@
                                 code: data.code,
                                 level: signal.level,
                                 price: signal.price,
-                                bsp_type: signal.bsp_type.join(', '),
+                                bsp_type: Array.isArray(signal.bsp_type) ? signal.bsp_type.join(', ') : signal.bsp_type,
                                 operation: signal.operation,
                                 is_buy: signal.is_buy
                             };
@@ -310,11 +380,38 @@
                     tbody.appendChild(row);
                 });
             }
+            
+            // 发送配置更新到服务器
+            sendConfigUpdate(config) {
+                if (this.isConnected && this.ws.readyState === WebSocket.OPEN) {
+                    const message = JSON.stringify({
+                        type: "config_update",
+                        ...config
+                    });
+                    this.ws.send(message);
+                }
+            }
+        }
+        
+        // 更新WebSocket配置函数
+        function updateWebSocketConfig(key, value) {
+            // 更新UI状态显示
+            const statusElement = document.getElementById(key + 'Status');
+            if (statusElement) {
+                statusElement.textContent = value ? '开启' : '关闭';
+            }
+            
+            // 发送配置更新到服务器
+            if (window.client) {
+                const config = {};
+                config[key] = value;
+                window.client.sendConfigUpdate(config);
+            }
         }
         
         // 页面加载完成后初始化WebSocket客户端
         document.addEventListener('DOMContentLoaded', () => {
-            new ChanWebSocketClient();
+            window.client = new ChanWebSocketClient();
         });
     </script>
 </body>

@@ -5,7 +5,7 @@ import time
 import os
 import json
 from datetime import datetime, timedelta
-from threading import Timer
+from threading import Timer, Lock
 from Chan import CChan
 from ChanConfig import CChanConfig
 from Common.CEnum import AUTYPE, DATA_SRC, KL_TYPE, BSP_TYPE
@@ -25,11 +25,13 @@ except ImportError:
 
 class RealtimeMonitor:
     def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True, 
-                 enable_websocket=False, websocket_host="localhost", websocket_port=8765):
+                 enable_websocket=False, websocket_host="localhost", websocket_port=8765,
+                 send_wechat_message=True):
         self.codes = codes if isinstance(codes, list) else [codes]
         self.data_src = data_src
         self.debug = debug
         self.generate_visualization = generate_visualization
+        self.send_wechat_message = send_wechat_message
         self.enable_websocket = enable_websocket
         self.websocket_host = websocket_host
         self.websocket_port = websocket_port
@@ -118,6 +120,9 @@ class RealtimeMonitor:
         
         # WebSocket客户端连接集合
         self.websocket_clients = set()
+        
+        # 配置锁，确保线程安全
+        self.config_lock = Lock()
         
         # 创建输出目录
         self.output_path = os.path.join(os.getcwd(), "output")
@@ -442,7 +447,13 @@ class RealtimeMonitor:
         """
         整合检查并发送买卖点信号和变化
         """
-        if not self.wxpusher:
+        # 使用配置锁确保线程安全
+        with self.config_lock:
+            send_wechat = self.send_wechat_message
+            generate_viz = self.generate_visualization
+            debug_mode = self.debug
+            
+        if not self.wxpusher and send_wechat:
             return
             
         # 收集所有新出现的买卖点
@@ -570,11 +581,14 @@ class RealtimeMonitor:
             title = f"{code} 信号更新: {len(new_bsps)}个新信号, {len(disappeared_bsp_details)}个信号消失"
             
             # 发送微信推送 (设置contentType为markdown格式)
-            try:
-                self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
-                print(f"已发送信号通知: {title}")
-            except Exception as e:
-                print(f"发送微信推送失败: {e}")
+            if send_wechat:
+                try:
+                    self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
+                    print(f"已发送信号通知: {title}")
+                except Exception as e:
+                    print(f"发送微信推送失败: {e}")
+            else:
+                print(f"微信消息推送已禁用: {title}")
                 
             # 通过WebSocket推送JSON格式的消息
             if self.enable_websocket:
@@ -629,6 +643,11 @@ class RealtimeMonitor:
                     self.broadcast_websocket_message(json_message)
                 except Exception as e:
                     print(f"WebSocket消息推送失败: {e}")
+            
+            # 生成可视化图表（受控于generate_visualization参数）
+            if generate_viz:
+                # 这里可以添加生成可视化图表的代码
+                pass
 
     def generate_visualization_for_level(self, code, chan, plot_config, level):
         """
@@ -793,11 +812,24 @@ class RealtimeMonitor:
         
         try:
             async for message in websocket:
-                # 处理客户端发送的消息（如果需要）
-                pass
-        except websockets.ConnectionClosed:
+                # 处理客户端发送的消息
+                try:
+                    data = json.loads(message)
+                    if data.get("type") == "config_update":
+                        # 更新配置
+                        with self.config_lock:
+                            if "debug" in data:
+                                self.debug = data["debug"]
+                            if "generate_visualization" in data:
+                                self.generate_visualization = data["generate_visualization"]
+                            if "send_wechat_message" in data:
+                                self.send_wechat_message = data["send_wechat_message"]
+                        print(f"配置已更新: debug={self.debug}, generate_visualization={self.generate_visualization}, send_wechat_message={self.send_wechat_message}")
+                except json.JSONDecodeError:
+                    pass  # 忽略无法解析的JSON消息
+        except websockets.exceptions.ConnectionClosed:
             print(f"WebSocket连接已关闭: {websocket.remote_address}")
-        except websockets.ConnectionClosedError:
+        except websockets.exceptions.ConnectionClosedError:
             print(f"WebSocket连接错误: {websocket.remote_address}")
         except Exception as e:
             print(f"WebSocket处理过程中发生异常: {e}")
