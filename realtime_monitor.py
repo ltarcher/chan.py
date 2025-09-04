@@ -31,6 +31,64 @@ class RealtimeMonitor:
             KL_TYPE.K_1M
         ]
         
+        # 统一管理K线级别与中文名称的映射关系
+        self.kline_level_name_map = {
+            "K_1M": "1分钟",
+            "K_5M": "5分钟",
+            "K_15M": "15分钟",
+            "K_30M": "30分钟",
+            "K_60M": "60分钟",
+            "K_DAY": "日线",
+            "K_WEEK": "周线",
+            "K_MON": "月线"
+        }
+        
+        # K线级别枚举映射
+        self.level_enum_map = {
+            "K_1M": KL_TYPE.K_1M,
+            "K_5M": KL_TYPE.K_5M,
+            "K_15M": KL_TYPE.K_15M,
+            "K_30M": KL_TYPE.K_30M,
+            "K_60M": KL_TYPE.K_60M,
+            "K_DAY": KL_TYPE.K_DAY,
+            "K_WEEK": KL_TYPE.K_WEEK,
+            "K_MON": KL_TYPE.K_MON
+        }
+        
+        # 定义K线级别的优先级，从大到小排列
+        self.level_priority = {
+            KL_TYPE.K_MON: 8,
+            KL_TYPE.K_WEEK: 7,
+            KL_TYPE.K_DAY: 6,
+            KL_TYPE.K_60M: 5,
+            KL_TYPE.K_30M: 4,
+            KL_TYPE.K_15M: 3,
+            KL_TYPE.K_5M: 2,
+            KL_TYPE.K_1M: 1
+        }
+        
+        # 消失信号中K线级别的优先级映射
+        self.level_priority_map = {
+            "K_MON": 8,
+            "K_WEEK": 7,
+            "K_DAY": 6,
+            "K_60M": 5,
+            "K_30M": 4,
+            "K_15M": 3,
+            "K_5M": 2,
+            "K_1M": 1
+        }
+        
+        # 信号类型映射
+        self.bsp_type_map = {
+            "1": "第一类买卖点",
+            "1p": "次级别盘整背驰第一类买卖点",
+            "2": "第二类买卖点",
+            "2s": "次级别趋势背驰第二类买卖点",
+            "3a": "第三类买卖点(中枢在1类后面)",
+            "3b": "第三类买卖点(中枢在1类前面)"
+        }
+        
         # 初始化微信推送
         try:
             self.wxpusher = Wxpusher()
@@ -56,16 +114,13 @@ class RealtimeMonitor:
         """
         level_names = {
             KL_TYPE.K_1M: "1分钟",
-            KL_TYPE.K_3M: "3分钟",
             KL_TYPE.K_5M: "5分钟",
             KL_TYPE.K_15M: "15分钟",
             KL_TYPE.K_30M: "30分钟",
             KL_TYPE.K_60M: "60分钟",
             KL_TYPE.K_DAY: "日线",
             KL_TYPE.K_WEEK: "周线",
-            KL_TYPE.K_MON: "月线",
-            KL_TYPE.K_QUARTER: "季线",
-            KL_TYPE.K_YEAR: "年线"
+            KL_TYPE.K_MON: "月线"
         }
         return level_names.get(level, level.value)
 
@@ -166,8 +221,22 @@ class RealtimeMonitor:
         # 检查并发送买卖点信号和变化（整合发送）
         self.check_and_send_bsp_signals_with_changes(code, all_latest_bsps)
 
-        # 检查买卖点变化
-        self.check_bsp_changes(code, all_latest_bsps)
+        # 更新previous_bsp，保存当前所有买卖点的详细信息
+        current_bsps = {}
+        for lv, bsp in all_latest_bsps:
+            key = f"{code}_{lv.value}"  # 使用lv.value作为key的一部分
+            bsp_detail = {
+                'key': self.get_bsp_key(code, lv, bsp),
+                'is_buy': bsp.is_buy,
+                'time': bsp.klu.time.strftime("%Y-%m-%d %H:%M:%S") if hasattr(bsp.klu.time, 'strftime') else str(bsp.klu.time),
+                'type': [t.value for t in bsp.type]  # 保存买卖点类型，避免重复调用
+            }
+            
+            if key not in current_bsps:
+                current_bsps[key] = []
+            current_bsps[key].append(bsp_detail)
+        
+        self.previous_bsp.update(current_bsps)
 
     def get_bsp_description(self, bsp):
         """
@@ -381,48 +450,40 @@ class RealtimeMonitor:
         
         # 查找消失的买卖点
         disappeared_bsps = []
+        disappeared_bsp_details = []  # 保存消失的买卖点详细信息
+        
         for key in list(self.previous_bsp.keys()):
             if key in current_bsps:
-                previous_set = set(self.previous_bsp[key])
-                current_set = set(current_bsps[key])
-
-                # 查找消失的买卖点
-                disappeared = previous_set - current_set
-                if disappeared:
-                    disappeared_bsps.extend(list(disappeared))
+                # 获取当前的买卖点key集合
+                current_bsp_keys = set(current_bsps[key])
+                
+                # 检查之前保存的买卖点详情
+                for prev_bsp_detail in self.previous_bsp[key]:
+                    if prev_bsp_detail['key'] not in current_bsp_keys:
+                        # 这个买卖点消失了
+                        disappeared_bsps.append(prev_bsp_detail['key'])
+                        disappeared_bsp_details.append(prev_bsp_detail)
             # 如果当前没有该级别的数据，但之前有，则认为所有该级别的信号都消失了
             elif key.startswith(f"{code}_"):
-                disappeared_bsps.extend(self.previous_bsp[key])
+                for prev_bsp_detail in self.previous_bsp[key]:
+                    disappeared_bsps.append(prev_bsp_detail['key'])
+                    disappeared_bsp_details.append(prev_bsp_detail)
         
         # 从sent_bsp中移除消失的买卖点，以便如果重新出现可以再次发送
         for bsp_key in disappeared_bsps:
             self.sent_bsp.discard(bsp_key)
         
-        # 更新previous_bsp
-        self.previous_bsp.update(current_bsps)
-        
         # 对新信号按照时间和K线级别从大到小排序
         if new_bsps:
-            # 定义K线级别的优先级，从大到小排列
-            level_priority = {
-                KL_TYPE.K_MON: 8,
-                KL_TYPE.K_WEEK: 7,
-                KL_TYPE.K_DAY: 6,
-                KL_TYPE.K_60M: 5,
-                KL_TYPE.K_30M: 4,
-                KL_TYPE.K_15M: 3,
-                KL_TYPE.K_5M: 2,
-                KL_TYPE.K_1M: 1
-            }
-            
             # 按照时间从新到旧，级别从大到小排序
-            new_bsps.sort(key=lambda x: (x[1].klu.time, level_priority[x[0]]), reverse=True)
+            new_bsps.sort(key=lambda x: (x[1].klu.time, self.level_priority[x[0]]), reverse=True)
         
         # 对消失的信号按照时间和K线级别从大到小排序
-        if disappeared_bsps:
+        if disappeared_bsp_details:
             # 解析消失的信号并排序
             parsed_disappeared_bsps = []
-            for bsp_key in disappeared_bsps:
+            for bsp_detail in disappeared_bsp_details:
+                bsp_key = bsp_detail['key']
                 parts = bsp_key.split("_")
                 if len(parts) >= 4:
                     bsp_code, bsp_lv, bsp_time_str, bsp_type = parts[0], parts[1], parts[2], parts[3]
@@ -435,26 +496,14 @@ class RealtimeMonitor:
                         except ValueError:
                             bsp_time = datetime.min  # 无法解析时间时使用最小时间
                     
-                    parsed_disappeared_bsps.append((bsp_code, bsp_lv, bsp_time, bsp_type, bsp_key))
-            
-            # 定义K线级别的优先级映射
-            level_priority_map = {
-                "K_MON": 8,
-                "K_WEEK": 7,
-                "K_DAY": 6,
-                "K_60M": 5,
-                "K_30M": 4,
-                "K_15M": 3,
-                "K_5M": 2,
-                "K_1M": 1
-            }
+                    parsed_disappeared_bsps.append((bsp_code, bsp_lv, bsp_time, bsp_type, bsp_detail))
             
             # 按照时间从新到旧，级别从大到小排序
-            parsed_disappeared_bsps.sort(key=lambda x: (x[2], level_priority_map.get(x[1], 0)), reverse=True)
-            disappeared_bsps = [item[4] for item in parsed_disappeared_bsps]
+            parsed_disappeared_bsps.sort(key=lambda x: (x[2], self.level_priority_map.get(x[1], 0)), reverse=True)
+            disappeared_bsp_details = [item[4] for item in parsed_disappeared_bsps]
         
         # 如果有新的买卖点或消失的买卖点，则发送汇总通知
-        if new_bsps or disappeared_bsps:
+        if new_bsps or disappeared_bsp_details:
             # 构造消息内容 (Markdown格式)
             msg = f"## 📊 {code} 信号通知\n\n"
             
@@ -470,46 +519,35 @@ class RealtimeMonitor:
                     level_name = self.get_kline_level_name(lv)  # 使用中文级别名称
                     msg += f"| {level_name} | {bsp.klu.time} | {price} | {bsp_desc} | {operation} |\n"
             
-            if disappeared_bsps:
-                msg += f"\n### 🔴 消失信号 ({len(disappeared_bsps)}个)\n\n"
-                msg += "| 股票代码 | 级别 | 时间 | 信号类型 | 原因 |\n"
-                msg += "|----------|------|------|----------|------|\n"
+            if disappeared_bsp_details:
+                msg += f"\n### 🔴 消失信号 ({len(disappeared_bsp_details)}个)\n\n"
+                msg += "| 股票代码 | 级别 | 时间 | 信号类型 | 操作建议 | 原因 |\n"
+                msg += "|----------|------|------|----------|------------|------|\n"
                 
-                # 信号类型映射
-                bsp_type_map = {
-                    "1": "第一类买卖点",
-                    "1p": "次级别盘整背驰第一类买卖点",
-                    "2": "第二类买卖点",
-                    "2s": "次级别趋势背驰第二类买卖点",
-                    "3a": "第三类买卖点(中枢在1类后面)",
-                    "3b": "第三类买卖点(中枢在1类前面)"
-                }
-                
-                for bsp_key in disappeared_bsps:
+                for bsp_detail in disappeared_bsp_details:
+                    bsp_key = bsp_detail['key']
                     # 解析bsp_key获取详细信息
                     parts = bsp_key.split("_")
                     if len(parts) >= 4:
                         bsp_code, bsp_lv, bsp_time, bsp_type = parts[0], parts[1], parts[2], parts[3]
                         # 将级别代码转换为中文名称
-                        level_name_map = {
-                            "K_1M": "1分钟",
-                            "K_3M": "3分钟", 
-                            "K_5M": "5分钟",
-                            "K_15M": "15分钟",
-                            "K_30M": "30分钟",
-                            "K_60M": "60分钟",
-                            "K_DAY": "日线",
-                            "K_WEEK": "周线",
-                            "K_MON": "月线",
-                            "K_QUARTER": "季线",
-                            "K_YEAR": "年线"
-                        }
-                        level_name = level_name_map.get(bsp_lv, bsp_lv)
+                        level_name = self.kline_level_name_map.get(bsp_lv, bsp_lv)
+                        
+                        # 如果通过kline_level_name_map没有找到匹配，则尝试使用get_kline_level_name方法
+                        if level_name == bsp_lv:
+                            level_enum = self.level_enum_map.get(bsp_lv)
+                            if level_enum:
+                                level_name = self.get_kline_level_name(level_enum)
+                        
                         # 将信号类型代码转换为中文名称
-                        bsp_type_name = bsp_type_map.get(bsp_type, bsp_type)
-                        msg += f"| {bsp_code} | {level_name} | {bsp_time} | {bsp_type_name} | 信号不再满足条件 |\n"
+                        bsp_type_name = self.bsp_type_map.get(bsp_type, bsp_type)
+                        
+                        # 获取买卖点类型（买入/卖出）
+                        operation = '📈 买入' if bsp_detail.get('is_buy', False) else '📉 卖出'
+                        
+                        msg += f"| {bsp_code} | {level_name} | {bsp_time} | {bsp_type_name} | {operation} | 信号不再满足条件 |\n"
             
-            title = f"{code} 信号更新: {len(new_bsps)}个新信号, {len(disappeared_bsps)}个信号消失"
+            title = f"{code} 信号更新: {len(new_bsps)}个新信号, {len(disappeared_bsp_details)}个信号消失"
             
             # 发送微信推送 (设置contentType为markdown格式)
             try:
