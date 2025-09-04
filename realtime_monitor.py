@@ -755,19 +755,35 @@ class RealtimeMonitor:
         if not WEBSOCKET_AVAILABLE:
             print("WebSocket依赖未安装，无法启动WebSocket服务器")
             return
-            
+
         def run_websocket_server():
-            asyncio.set_event_loop(asyncio.new_event_loop())
-            start_server = websockets.serve(self.websocket_handler, self.websocket_host, self.websocket_port)
-            print(f"WebSocket服务器已启动，监听 {self.websocket_host}:{self.websocket_port}")
-            asyncio.get_event_loop().run_until_complete(start_server)
-            asyncio.get_event_loop().run_forever()
-            
+            try:
+                # 使用asyncio.run()启动服务器（Python 3.7+）
+                asyncio.run(self._websocket_server_coroutine())
+            except AttributeError:
+                # Python 3.6及以下版本的兼容处理
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                start_server = websockets.serve(self.websocket_handler, self.websocket_host, self.websocket_port)
+                print(f"WebSocket服务器已启动，监听 {self.websocket_host}:{self.websocket_port}")
+                loop.run_until_complete(start_server)
+                loop.run_forever()
+            except Exception as e:
+                print(f"WebSocket服务器启动失败: {e}")
+
         # 在新线程中启动WebSocket服务器
         websocket_thread = Thread(target=run_websocket_server, daemon=True)
         websocket_thread.start()
 
-    async def websocket_handler(self, websocket, path):
+    async def _websocket_server_coroutine(self):
+        """
+        WebSocket服务器协程
+        """
+        server = await websockets.serve(self.websocket_handler, self.websocket_host, self.websocket_port)
+        print(f"WebSocket服务器已启动，监听 {self.websocket_host}:{self.websocket_port}")
+        await server.wait_closed()
+
+    async def websocket_handler(self, websocket):
         """
         WebSocket连接处理函数
         """
@@ -779,12 +795,20 @@ class RealtimeMonitor:
             async for message in websocket:
                 # 处理客户端发送的消息（如果需要）
                 pass
-        except websockets.exceptions.ConnectionClosed:
-            pass
+        except websockets.ConnectionClosed:
+            print(f"WebSocket连接已关闭: {websocket.remote_address}")
+        except websockets.ConnectionClosedError:
+            print(f"WebSocket连接错误: {websocket.remote_address}")
+        except Exception as e:
+            print(f"WebSocket处理过程中发生异常: {e}")
         finally:
             # 连接关闭时从客户端集合中移除
-            self.websocket_clients.remove(websocket)
-            print(f"WebSocket客户端已断开连接: {websocket.remote_address}")
+            try:
+                self.websocket_clients.remove(websocket)
+                print(f"WebSocket客户端已断开连接: {websocket.remote_address}")
+            except KeyError:
+                # 客户端可能已经被移除
+                pass
 
     def broadcast_websocket_message(self, message):
         """
@@ -798,13 +822,28 @@ class RealtimeMonitor:
             disconnected_clients = set()
             for client in self.websocket_clients:
                 try:
-                    asyncio.run_coroutine_threadsafe(client.send(message), asyncio.get_event_loop())
-                except:
+                    # 直接在新线程中创建事件循环并发送消息
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(client.send(message))
+                    loop.close()
+                except websockets.exceptions.ConnectionClosed:
+                    print(f"WebSocket连接已关闭，将从客户端列表中移除")
+                    disconnected_clients.add(client)
+                except websockets.exceptions.ConnectionClosedError:
+                    print(f"WebSocket连接错误，将从客户端列表中移除")
+                    disconnected_clients.add(client)
+                except Exception as e:
+                    print(f"WebSocket消息发送失败: {e}")
                     disconnected_clients.add(client)
             
             # 移除已断开的客户端
             for client in disconnected_clients:
-                self.websocket_clients.discard(client)
+                try:
+                    self.websocket_clients.remove(client)
+                except KeyError:
+                    # 客户端可能已经被移除
+                    pass
                 
         # 启动发送线程
         send_thread = Thread(target=send_messages, daemon=True)
@@ -816,7 +855,7 @@ def main():
     codes = ["上证指数", "510050", "510500", "510300"]
     
     # 创建监控实例（debug模式默认关闭，可视化生成默认开启）
-    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False, enable_websocket=True)
+    monitor = RealtimeMonitor(codes, debug=True, generate_visualization=False, enable_websocket=True)
     
     # 开始定时监控（每30秒）
     monitor.start_monitoring(30)
