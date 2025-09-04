@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缠论买卖点实时监控</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        
+        .connection-status {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .signals-container {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .signal-section {
+            flex: 1;
+        }
+        
+        .signal-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        
+        .signal-table th, .signal-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .signal-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        
+        .signal-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .signal-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .buy-signal {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .sell-signal {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .timestamp {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+        
+        @media (max-width: 768px) {
+            .signals-container {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>缠论买卖点实时监控</h1>
+        
+        <div id="connectionStatus" class="connection-status disconnected">
+            WebSocket连接状态: 未连接
+        </div>
+        
+        <div class="signals-container">
+            <div class="signal-section">
+                <h2>新信号</h2>
+                <table class="signal-table" id="newSignalsTable">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>股票代码</th>
+                            <th>级别</th>
+                            <th>价格</th>
+                            <th>信号类型</th>
+                            <th>操作建议</th>
+                        </tr>
+                    </thead>
+                    <tbody id="newSignalsBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center;">暂无新信号</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="signal-section">
+                <h2>消失信号</h2>
+                <table class="signal-table" id="disappearedSignalsTable">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>股票代码</th>
+                            <th>级别</th>
+                            <th>信号类型</th>
+                            <th>操作建议</th>
+                            <th>原因</th>
+                        </tr>
+                    </thead>
+                    <tbody id="disappearedSignalsBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center;">暂无消失信号</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class ChanWebSocketClient {
+            constructor() {
+                this.ws = null;
+                this.isConnected = false;
+                this.newSignals = [];
+                this.disappearedSignals = [];
+                this.maxSignals = 100; // 最大保存信号数量
+                this.init();
+            }
+            
+            init() {
+                this.connect();
+                // 每30秒尝试重连一次
+                setInterval(() => {
+                    if (!this.isConnected) {
+                        this.connect();
+                    }
+                }, 30000);
+            }
+            
+            connect() {
+                try {
+                    // 尝试连接到本地WebSocket服务器
+                    this.ws = new WebSocket('ws://localhost:8765');
+                    
+                    this.ws.onopen = (event) => {
+                        console.log('WebSocket连接已建立');
+                        this.isConnected = true;
+                        this.updateConnectionStatus(true);
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (error) {
+                            console.error('解析WebSocket消息失败:', error);
+                        }
+                    };
+                    
+                    this.ws.onclose = (event) => {
+                        console.log('WebSocket连接已关闭');
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket错误:', error);
+                        this.isConnected = false;
+                        this.updateConnectionStatus(false);
+                    };
+                } catch (error) {
+                    console.error('WebSocket连接失败:', error);
+                    this.updateConnectionStatus(false);
+                }
+            }
+            
+            updateConnectionStatus(connected) {
+                const statusElement = document.getElementById('connectionStatus');
+                if (connected) {
+                    statusElement.className = 'connection-status connected';
+                    statusElement.textContent = 'WebSocket连接状态: 已连接';
+                } else {
+                    statusElement.className = 'connection-status disconnected';
+                    statusElement.textContent = 'WebSocket连接状态: 未连接';
+                }
+            }
+            
+            handleMessage(data) {
+                if (data.type === 'bsp_signal_update') {
+                    // 处理新信号
+                    if (data.new_signals && data.new_signals.length > 0) {
+                        data.new_signals.forEach(signal => {
+                            const signalData = {
+                                timestamp: new Date().toLocaleString('zh-CN'),
+                                code: data.code,
+                                level: signal.level,
+                                price: signal.price,
+                                bsp_type: signal.bsp_type.join(', '),
+                                operation: signal.operation,
+                                is_buy: signal.is_buy
+                            };
+                            this.newSignals.unshift(signalData); // 添加到数组开头
+                        });
+                        this.newSignals = this.newSignals.slice(0, this.maxSignals); // 限制数量
+                        this.updateNewSignalsTable();
+                    }
+                    
+                    // 处理消失信号
+                    if (data.disappeared_signals && data.disappeared_signals.length > 0) {
+                        data.disappeared_signals.forEach(signal => {
+                            const signalData = {
+                                timestamp: new Date().toLocaleString('zh-CN'),
+                                code: signal.code,
+                                level: signal.level,
+                                bsp_type: signal.bsp_type,
+                                operation: signal.operation,
+                                is_buy: signal.is_buy,
+                                reason: signal.reason
+                            };
+                            this.disappearedSignals.unshift(signalData); // 添加到数组开头
+                        });
+                        this.disappearedSignals = this.disappearedSignals.slice(0, this.maxSignals); // 限制数量
+                        this.updateDisappearedSignalsTable();
+                    }
+                }
+            }
+            
+            updateNewSignalsTable() {
+                const tbody = document.getElementById('newSignalsBody');
+                if (this.newSignals.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">暂无新信号</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                this.newSignals.forEach(signal => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="timestamp">${signal.timestamp}</td>
+                        <td>${signal.code}</td>
+                        <td>${signal.level}</td>
+                        <td>${signal.price}</td>
+                        <td>${signal.bsp_type}</td>
+                        <td class="${signal.is_buy ? 'buy-signal' : 'sell-signal'}">
+                            ${signal.operation}
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+            
+            updateDisappearedSignalsTable() {
+                const tbody = document.getElementById('disappearedSignalsBody');
+                if (this.disappearedSignals.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">暂无消失信号</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                this.disappearedSignals.forEach(signal => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="timestamp">${signal.timestamp}</td>
+                        <td>${signal.code}</td>
+                        <td>${signal.level}</td>
+                        <td>${signal.bsp_type}</td>
+                        <td class="${signal.is_buy ? 'buy-signal' : 'sell-signal'}">
+                            ${signal.operation}
+                        </td>
+                        <td>${signal.reason}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            }
+        }
+        
+        // 页面加载完成后初始化WebSocket客户端
+        document.addEventListener('DOMContentLoaded', () => {
+            new ChanWebSocketClient();
+        });
+    </script>
+</body>
+</html>
