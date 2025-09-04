@@ -10,15 +10,15 @@ if __name__ == "__main__":
     #code = "sz.159915"
     #code = "上证指数"
     code = "sz.510050"
-    begin_time = "2024-01-01"
+    begin_time = "2025-08-01"
     end_time = None
     data_src = DATA_SRC.QSTOCK
     # 级别从大到小，如果涉及到日级以内，时间不要超过3个月
     lv_list = [ 
         #KL_TYPE.K_MON,
-        KL_TYPE.K_WEEK,
-        KL_TYPE.K_DAY,
-        #KL_TYPE.K_30M,
+        #KL_TYPE.K_WEEK,
+        #KL_TYPE.K_DAY,
+        KL_TYPE.K_30M,
         #KL_TYPE.K_15M,
     ]
 
@@ -95,6 +95,7 @@ if __name__ == "__main__":
         png_name = f"{code}-{",".join(kltype)}-{begin_time}-{str(data_src)}"
 
         # chan 是已经计算完成的 CChan 实例
+        '''
         plotly_driver = CPlotlyDriver(chan, plot_config=plot_config, plot_para=plot_para)
         #plotly_driver.show()
         #plotly_driver.save2img(f'{png_name}.png')  # 保存为图片文件
@@ -110,7 +111,7 @@ if __name__ == "__main__":
         plot_driver.save2img(f"{png_name}.png")
         #plot_driver.save2html_mpld3(f"{png_name}.html")
         #input("Press Enter to continue...")
-        '''
+        
     else:
         CAnimateDriver(
             chan,

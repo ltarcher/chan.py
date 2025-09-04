@@ -1,0 +1,659 @@
+#!/usr/bin/env python
+# -*- encoding=utf8 -*-
+
+import time
+import os
+import json
+from datetime import datetime, timedelta
+from threading import Timer
+from Chan import CChan
+from ChanConfig import CChanConfig
+from Common.CEnum import AUTYPE, DATA_SRC, KL_TYPE, BSP_TYPE
+from Plot.PlotlyDriver import CPlotlyDriver
+from WeChatNotify.wxpusher import Wxpusher
+import qstock as qs
+
+
+class RealtimeMonitor:
+    def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True):
+        self.codes = codes if isinstance(codes, list) else [codes]
+        self.data_src = data_src
+        self.debug = debug
+        self.generate_visualization = generate_visualization
+        self.lv_list = [
+            KL_TYPE.K_MON,
+            KL_TYPE.K_WEEK,
+            KL_TYPE.K_DAY,
+            KL_TYPE.K_60M,
+            KL_TYPE.K_30M,
+            KL_TYPE.K_15M,
+            KL_TYPE.K_5M,
+            KL_TYPE.K_1M
+        ]
+        
+        # 初始化微信推送
+        try:
+            self.wxpusher = Wxpusher()
+            self.wxpusher.get_users()
+        except Exception as e:
+            print(f"微信推送初始化失败: {e}")
+            self.wxpusher = None
+
+        # 用于记录已发送的买卖点，避免重复推送
+        self.sent_bsp = set()
+        
+        # 用于记录上一次的买卖点，检测变化
+        self.previous_bsp = {}
+        
+        # 创建输出目录
+        self.output_path = os.path.join(os.getcwd(), "output")
+        if not os.path.exists(self.output_path):
+            os.makedirs(self.output_path)
+
+    def get_kline_level_name(self, level):
+        """
+        将K线级别的枚举值转换为中文文字表示
+        """
+        level_names = {
+            KL_TYPE.K_1M: "1分钟",
+            KL_TYPE.K_3M: "3分钟",
+            KL_TYPE.K_5M: "5分钟",
+            KL_TYPE.K_15M: "15分钟",
+            KL_TYPE.K_30M: "30分钟",
+            KL_TYPE.K_60M: "60分钟",
+            KL_TYPE.K_DAY: "日线",
+            KL_TYPE.K_WEEK: "周线",
+            KL_TYPE.K_MON: "月线",
+            KL_TYPE.K_QUARTER: "季线",
+            KL_TYPE.K_YEAR: "年线"
+        }
+        return level_names.get(level, level.value)
+
+    def get_begin_time_by_level(self, level):
+        """
+        根据K线级别确定开始时间
+        K_DAY: 最近一年
+        K_WEEK: 最近10年
+        K_MON: 所有数据(从1900年开始)
+        分钟级别(K_60M及以下): 最近一个月
+        """
+        now = datetime.now()
+        if level == KL_TYPE.K_DAY:
+            return (now - timedelta(days=365)).strftime("%Y-%m-%d")
+        elif level == KL_TYPE.K_WEEK:
+            return (now - timedelta(days=365*10)).strftime("%Y-%m-%d")
+        elif level == KL_TYPE.K_MON:
+            return "1900-01-01"
+        elif level in [KL_TYPE.K_1M, KL_TYPE.K_3M, KL_TYPE.K_5M, KL_TYPE.K_15M, KL_TYPE.K_30M, KL_TYPE.K_60M]:
+            return (now - timedelta(days=30)).strftime("%Y-%m-%d")
+        else:
+            # 默认返回最近一年
+            return (now - timedelta(days=365)).strftime("%Y-%m-%d")
+
+    def analyze_single_code(self, code):
+        """
+        分析单个股票代码的缠论指标
+        """
+        print(f"开始分析股票: {code}")
+
+        config = CChanConfig({
+            "bi_strict": True,
+            "trigger_step": False,
+            "skip_step": 0,
+            "divergence_rate": float("inf"),
+            "bsp2_follow_1": True,
+            "bsp3_follow_1": True,
+            "min_zs_cnt": 0,
+            "bs1_peak": True,
+            "macd_algo": "peak",
+            "bs_type": '1,2,3a,1p,2s,3b',
+            "print_warning": True,
+            "zs_algo": "normal",
+            "cal_rsi": True,
+            "cal_kdj": True,
+            "cal_demark": True,
+            "boll_n": 20,
+        })
+
+        plot_config = {
+            "plot_kline": True,
+            "plot_kline_combine": True,
+            "plot_bi": True,
+            "plot_seg": True,
+            "plot_eigen": False,
+            "plot_zs": True,
+            "plot_macd": True,
+            "plot_mean": False,
+            "plot_channel": False,
+            "plot_bsp": True,
+            "plot_extrainfo": False,
+            "plot_demark": False,
+            "plot_marker": False,
+            "plot_rsi": False,
+            "plot_kdj": False,
+            "plot_boll": True,
+        }
+
+        # 收集所有级别的买卖点信息
+        all_latest_bsps = []
+        
+        # 分别获取和分析每个级别的数据
+        for lv in self.lv_list:
+            begin_time = self.get_begin_time_by_level(lv)
+            
+            try:
+                chan = CChan(
+                    code=code,
+                    begin_time=begin_time,
+                    end_time=None,
+                    data_src=self.data_src,
+                    lv_list=[lv],  # 只获取当前级别的数据
+                    config=config,
+                    autype=AUTYPE.QFQ,
+                )
+                
+                # 获取当前级别的买卖点（最多3个）
+                latest_bsps = chan[lv].bs_point_lst.get_latest_bsp(3)
+                all_latest_bsps.extend([(lv, bsp) for bsp in latest_bsps])
+                
+                # 生成当前级别的可视化图表（受控于generate_visualization参数）
+                if self.generate_visualization:
+                    self.generate_visualization_for_level(code, chan, plot_config, lv)
+                
+            except Exception as e:
+                print(f"分析股票 {code} 的 {lv.name} 级别时出错: {e}")
+
+        # 检查并发送买卖点信号和变化（整合发送）
+        self.check_and_send_bsp_signals_with_changes(code, all_latest_bsps)
+
+        # 检查买卖点变化
+        self.check_bsp_changes(code, all_latest_bsps)
+
+    def get_bsp_description(self, bsp):
+        """
+        获取买卖点描述信息
+        """
+        bsp_type_map = {
+            BSP_TYPE.T1: "第一类买卖点",
+            BSP_TYPE.T2: "第二类买卖点",
+            BSP_TYPE.T3A: "第三类买卖点(中枢在1类后面)",
+            BSP_TYPE.T3B: "第三类买卖点(中枢在1类前面)",
+            BSP_TYPE.T1P: "次级别盘整背驰第一类买卖点",
+            BSP_TYPE.T2S: "次级别趋势背驰第二类买卖点",
+        }
+        
+        bsp_types = [bsp_type_map.get(t, t.value) for t in bsp.type]
+        return ", ".join(bsp_types)
+
+    def get_bsp_key(self, code, lv, bsp):
+        """
+        生成买卖点的唯一标识符
+        """
+        return f"{code}_{lv.value}_{bsp.klu.time}_{bsp.type[0].value}"
+
+    def check_and_send_bsp_signals_single(self, code, chan):
+        """
+        检查并发送买卖点信号（单个）
+        """
+        if not self.wxpusher:
+            return
+            
+        for lv_idx, lv in enumerate(self.lv_list):
+            if lv not in chan.kl_datas:
+                continue
+                
+            # 获取最新的买卖点（最多3个）
+            latest_bsps = chan[lv].bs_point_lst.get_latest_bsp(3)
+            
+            for bsp in latest_bsps:
+                # 创建唯一标识符防止重复发送
+                bsp_id = self.get_bsp_key(code, lv, bsp)
+                
+                if bsp_id in self.sent_bsp:
+                    continue
+                    
+                # 获取K线价格信息
+                price = bsp.klu.close
+                bsp_desc = self.get_bsp_description(bsp)
+                
+                # 构造消息内容 (Markdown格式)
+                msg = f"## 🟢 新信号通知\n\n"
+                msg += f"- **股票代码**: {code}\n"
+                msg += f"- **级别**: {lv.value}\n"
+                msg += f"- **时间**: {bsp.klu.time}\n"
+                msg += f"- **价格**: {price}\n"
+                msg += f"- **信号类型**: {bsp_desc}\n"
+                msg += f"- **操作建议**: {'📈 买入' if bsp.is_buy else '📉 卖出'}"
+                
+                title = f"{code} {lv.value} {bsp_desc}"
+                
+                # 发送微信推送 (设置contentType为markdown格式)
+                try:
+                    result = self.wxpusher.wx_send_msg(msg, title=title, contentType=3)
+                    print(f"已发送信号: {title}")
+                    self.sent_bsp.add(bsp_id)
+                except Exception as e:
+                    print(f"发送微信推送失败: {e}")
+
+    def check_and_send_bsp_signals_batch(self, code, all_latest_bsps):
+        """
+        批量检查并发送买卖点信号
+        """
+        if not self.wxpusher:
+            return
+            
+        # 收集所有新出现的买卖点
+        new_bsps = []
+        
+        for lv, bsp in all_latest_bsps:
+            # 创建唯一标识符防止重复发送
+            bsp_id = self.get_bsp_key(code, lv, bsp)
+            
+            if bsp_id not in self.sent_bsp:
+                new_bsps.append((lv, bsp))
+                self.sent_bsp.add(bsp_id)
+        
+        # 如果有新的买卖点，则发送汇总通知
+        if new_bsps:
+            # 构造消息内容 (Markdown格式)
+            msg = f"## 🟢 {code} 新信号通知\n\n"
+            msg += "| 级别 | 时间 | 价格 | 信号类型 | 操作建议 |\n"
+            msg += "|------|------|------|----------|----------|\n"
+            
+            for lv, bsp in new_bsps:
+                price = bsp.klu.close
+                bsp_desc = self.get_bsp_description(bsp)
+                operation = '📈 买入' if bsp.is_buy else '📉 卖出'
+                msg += f"| {lv.value} | {bsp.klu.time} | {price} | {bsp_desc} | {operation} |\n"
+            
+            title = f"{code} 出现 {len(new_bsps)} 个新信号"
+            
+            # 发送微信推送 (设置contentType为markdown格式)
+            try:
+                self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
+                print(f"已发送信号: {title}")
+            except Exception as e:
+                print(f"发送微信推送失败: {e}")
+
+    def check_bsp_changes(self, code, all_latest_bsps):
+        """
+        检查买卖点变化情况
+        """
+        if not self.wxpusher:
+            return
+
+        current_bsps = {}
+
+        # 处理传入的买卖点数据
+        for lv, bsp in all_latest_bsps:
+            key = f"{code}_{lv.value}"
+            bsp_key = self.get_bsp_key(code, lv, bsp)
+
+            if key not in current_bsps:
+                current_bsps[key] = []
+            current_bsps[key].append(bsp_key)
+
+        # 检查是否有买卖点消失
+        for key in list(self.previous_bsp.keys()):
+            if key in current_bsps:
+                previous_set = set(self.previous_bsp[key])
+                current_set = set(current_bsps[key])
+
+                # 查找消失的买卖点
+                disappeared_bsps = previous_set - current_set
+                if disappeared_bsps:
+                    for bsp_key in disappeared_bsps:
+                        # 解析bsp_key获取详细信息
+                        parts = bsp_key.split("_")
+                        if len(parts) >= 4:
+                            bsp_code, bsp_lv, bsp_time, bsp_type = parts[0], parts[1], parts[2], parts[3]
+                            msg = f"## 🔴 信号消失通知\n\n"
+                            msg += f"- **股票代码**: {bsp_code}\n"
+                            msg += f"- **级别**: {bsp_lv}\n"
+                            msg += f"- **时间**: {bsp_time}\n"
+                            msg += f"- **信号类型**: {bsp_type}\n"
+                            msg += f"- **原因**: 随着行情变化，该买卖点不再满足条件，已被系统取消"
+
+                            title = f"{bsp_code} {bsp_lv} 信号消失"
+
+                            try:
+                                self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
+                                print(f"已发送信号消失通知: {title}")
+                                # 从sent_bsp中移除，以便如果重新出现可以再次发送
+                                self.sent_bsp.discard(bsp_key)
+                            except Exception as e:
+                                print(f"发送信号消失通知失败: {e}")
+            # 如果当前没有该级别的数据，但之前有，则认为所有该级别的信号都消失了
+            elif key.startswith(f"{code}_"):
+                for bsp_key in self.previous_bsp[key]:
+                    parts = bsp_key.split("_")
+                    if len(parts) >= 4:
+                        bsp_code, bsp_lv, bsp_time, bsp_type = parts[0], parts[1], parts[2], parts[3]
+                        msg = f"## 🔴 信号消失通知\n\n"
+                        msg += f"- **股票代码**: {bsp_code}\n"
+                        msg += f"- **级别**: {bsp_lv}\n"
+                        msg += f"- **时间**: {bsp_time}\n"
+                        msg += f"- **信号类型**: {bsp_type}\n"
+                        msg += f"- **原因**: 随着行情变化，该买卖点不再满足条件，已被系统取消"
+
+                        title = f"{bsp_code} {bsp_lv} 信号消失"
+
+                        try:
+                            self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
+                            print(f"已发送信号消失通知: {title}")
+                            # 从sent_bsp中移除，以便如果重新出现可以再次发送
+                            self.sent_bsp.discard(bsp_key)
+                        except Exception as e:
+                            print(f"发送信号消失通知失败: {e}")
+
+        # 更新previous_bsp
+        self.previous_bsp.update(current_bsps)
+
+    def check_and_send_bsp_signals_with_changes(self, code, all_latest_bsps):
+        """
+        整合检查并发送买卖点信号和变化
+        """
+        if not self.wxpusher:
+            return
+            
+        # 收集所有新出现的买卖点
+        new_bsps = []
+        
+        for lv, bsp in all_latest_bsps:
+            # 创建唯一标识符防止重复发送
+            bsp_id = self.get_bsp_key(code, lv, bsp)
+            
+            if bsp_id not in self.sent_bsp:
+                new_bsps.append((lv, bsp))
+                self.sent_bsp.add(bsp_id)
+        
+        # 检查买卖点变化
+        current_bsps = {}
+        
+        # 重构当前买卖点数据结构
+        for lv, bsp in all_latest_bsps:
+            key = f"{code}_{lv.value}"
+            bsp_key = self.get_bsp_key(code, lv, bsp)
+
+            if key not in current_bsps:
+                current_bsps[key] = []
+            current_bsps[key].append(bsp_key)
+        
+        # 查找消失的买卖点
+        disappeared_bsps = []
+        for key in list(self.previous_bsp.keys()):
+            if key in current_bsps:
+                previous_set = set(self.previous_bsp[key])
+                current_set = set(current_bsps[key])
+
+                # 查找消失的买卖点
+                disappeared = previous_set - current_set
+                if disappeared:
+                    disappeared_bsps.extend(list(disappeared))
+            # 如果当前没有该级别的数据，但之前有，则认为所有该级别的信号都消失了
+            elif key.startswith(f"{code}_"):
+                disappeared_bsps.extend(self.previous_bsp[key])
+        
+        # 从sent_bsp中移除消失的买卖点，以便如果重新出现可以再次发送
+        for bsp_key in disappeared_bsps:
+            self.sent_bsp.discard(bsp_key)
+        
+        # 更新previous_bsp
+        self.previous_bsp.update(current_bsps)
+        
+        # 对新信号按照时间和K线级别从大到小排序
+        if new_bsps:
+            # 定义K线级别的优先级，从大到小排列
+            level_priority = {
+                KL_TYPE.K_MON: 8,
+                KL_TYPE.K_WEEK: 7,
+                KL_TYPE.K_DAY: 6,
+                KL_TYPE.K_60M: 5,
+                KL_TYPE.K_30M: 4,
+                KL_TYPE.K_15M: 3,
+                KL_TYPE.K_5M: 2,
+                KL_TYPE.K_1M: 1
+            }
+            
+            # 按照时间从新到旧，级别从大到小排序
+            new_bsps.sort(key=lambda x: (x[1].klu.time, level_priority[x[0]]), reverse=True)
+        
+        # 对消失的信号按照时间和K线级别从大到小排序
+        if disappeared_bsps:
+            # 解析消失的信号并排序
+            parsed_disappeared_bsps = []
+            for bsp_key in disappeared_bsps:
+                parts = bsp_key.split("_")
+                if len(parts) >= 4:
+                    bsp_code, bsp_lv, bsp_time_str, bsp_type = parts[0], parts[1], parts[2], parts[3]
+                    # 尝试解析时间
+                    try:
+                        bsp_time = datetime.strptime(bsp_time_str, "%Y-%m-%d %H:%M:%S")
+                    except ValueError:
+                        try:
+                            bsp_time = datetime.strptime(bsp_time_str, "%Y-%m-%d")
+                        except ValueError:
+                            bsp_time = datetime.min  # 无法解析时间时使用最小时间
+                    
+                    parsed_disappeared_bsps.append((bsp_code, bsp_lv, bsp_time, bsp_type, bsp_key))
+            
+            # 定义K线级别的优先级映射
+            level_priority_map = {
+                "K_MON": 8,
+                "K_WEEK": 7,
+                "K_DAY": 6,
+                "K_60M": 5,
+                "K_30M": 4,
+                "K_15M": 3,
+                "K_5M": 2,
+                "K_1M": 1
+            }
+            
+            # 按照时间从新到旧，级别从大到小排序
+            parsed_disappeared_bsps.sort(key=lambda x: (x[2], level_priority_map.get(x[1], 0)), reverse=True)
+            disappeared_bsps = [item[4] for item in parsed_disappeared_bsps]
+        
+        # 如果有新的买卖点或消失的买卖点，则发送汇总通知
+        if new_bsps or disappeared_bsps:
+            # 构造消息内容 (Markdown格式)
+            msg = f"## 📊 {code} 信号通知\n\n"
+            
+            if new_bsps:
+                msg += f"### 🟢 新信号 ({len(new_bsps)}个)\n\n"
+                msg += "| 级别 | 时间 | 价格 | 信号类型 | 操作建议 |\n"
+                msg += "|------|------|------|----------|----------|\n"
+                
+                for lv, bsp in new_bsps:
+                    price = bsp.klu.close
+                    bsp_desc = self.get_bsp_description(bsp)
+                    operation = '📈 买入' if bsp.is_buy else '📉 卖出'
+                    level_name = self.get_kline_level_name(lv)  # 使用中文级别名称
+                    msg += f"| {level_name} | {bsp.klu.time} | {price} | {bsp_desc} | {operation} |\n"
+            
+            if disappeared_bsps:
+                msg += f"\n### 🔴 消失信号 ({len(disappeared_bsps)}个)\n\n"
+                msg += "| 股票代码 | 级别 | 时间 | 信号类型 | 原因 |\n"
+                msg += "|----------|------|------|----------|------|\n"
+                
+                # 信号类型映射
+                bsp_type_map = {
+                    "1": "第一类买卖点",
+                    "1p": "次级别盘整背驰第一类买卖点",
+                    "2": "第二类买卖点",
+                    "2s": "次级别趋势背驰第二类买卖点",
+                    "3a": "第三类买卖点(中枢在1类后面)",
+                    "3b": "第三类买卖点(中枢在1类前面)"
+                }
+                
+                for bsp_key in disappeared_bsps:
+                    # 解析bsp_key获取详细信息
+                    parts = bsp_key.split("_")
+                    if len(parts) >= 4:
+                        bsp_code, bsp_lv, bsp_time, bsp_type = parts[0], parts[1], parts[2], parts[3]
+                        # 将级别代码转换为中文名称
+                        level_name_map = {
+                            "K_1M": "1分钟",
+                            "K_3M": "3分钟", 
+                            "K_5M": "5分钟",
+                            "K_15M": "15分钟",
+                            "K_30M": "30分钟",
+                            "K_60M": "60分钟",
+                            "K_DAY": "日线",
+                            "K_WEEK": "周线",
+                            "K_MON": "月线",
+                            "K_QUARTER": "季线",
+                            "K_YEAR": "年线"
+                        }
+                        level_name = level_name_map.get(bsp_lv, bsp_lv)
+                        # 将信号类型代码转换为中文名称
+                        bsp_type_name = bsp_type_map.get(bsp_type, bsp_type)
+                        msg += f"| {bsp_code} | {level_name} | {bsp_time} | {bsp_type_name} | 信号不再满足条件 |\n"
+            
+            title = f"{code} 信号更新: {len(new_bsps)}个新信号, {len(disappeared_bsps)}个信号消失"
+            
+            # 发送微信推送 (设置contentType为markdown格式)
+            try:
+                self.wxpusher.wx_send_topicname_group_msg(msg, topicname="缠论指标", title=title, contentType=3)
+                print(f"已发送信号通知: {title}")
+            except Exception as e:
+                print(f"发送微信推送失败: {e}")
+
+    def generate_visualization_for_level(self, code, chan, plot_config, level):
+        """
+        为单个级别生成可视化图表
+        """
+        try:
+            plot_para = {
+                "seg": {
+                    "plot_trendline": True,
+                },
+                "bi": {
+                    "disp_end": True,
+                },
+                "figure": {
+                    "x_range": chan.get_max_kline_range(),
+                }
+            }
+
+            output_name = f"{code}-{level.name}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+            # 创建子目录
+            lv_output_path = os.path.join(self.output_path, level.name)
+            if not os.path.exists(lv_output_path):
+                os.makedirs(lv_output_path)
+
+            # 生成HTML图表
+            plotly_driver = CPlotlyDriver(chan, plot_config=plot_config, plot_para=plot_para)
+            html_path = os.path.join(lv_output_path, f"{output_name}.html")
+            plotly_driver.savefig(html_path)
+            print(f"已生成图表: {html_path}")
+
+        except Exception as e:
+            print(f"生成{level.name}级别可视化图表时出错: {e}")
+
+    def generate_visualization(self, code, all_chans, plot_config):
+        """
+        生成可视化图表（所有级别）
+        """
+        try:
+            for lv, chan in all_chans.items():
+                self.generate_visualization_for_level(code, chan, plot_config, lv)
+        except Exception as e:
+            print(f"生成可视化图表时出错: {e}")
+
+    def is_trading_time(self):
+        """
+        判断当前是否为交易时间和交易日
+        交易时间：周一至周五 9:30-11:30, 13:00-15:00
+        """
+        # 如果debug模式启用，忽略交易日和交易时间限制
+        if self.debug:
+            return True
+            
+        try:
+            # 获取当前时间和日期
+            now = datetime.now()
+            weekday = now.weekday()  # 周一为0，周日为6
+            
+            # 判断是否为周末
+            if weekday >= 5:  # 周六(5)和周日(6)
+                return False
+            
+            # 判断是否为交易日（通过qstock获取最新交易日）
+            latest_trade_date = qs.latest_trade_date()
+            latest_trade_date = datetime.strptime(latest_trade_date, "%Y-%m-%d")
+            
+            # 如果最新交易日不是今天，则今天不是交易日
+            if latest_trade_date.date() != now.date():
+                return False
+            
+            # 判断是否为交易时间
+            current_time = now.time()
+            morning_start = datetime.strptime("09:30", "%H:%M").time()
+            morning_end = datetime.strptime("11:30", "%H:%M").time()
+            afternoon_start = datetime.strptime("13:00", "%H:%M").time()
+            afternoon_end = datetime.strptime("15:00", "%H:%M").time()
+            
+            # 在交易时间范围内
+            if (morning_start <= current_time <= morning_end) or \
+               (afternoon_start <= current_time <= afternoon_end):
+                return True
+            
+            return False
+        except Exception as e:
+            print(f"判断交易时间时出错: {e}")
+            # 出错时默认返回True，避免影响正常监控
+            return True
+
+    def run_analysis(self):
+        """
+        运行一次完整的分析
+        """
+        # 判断是否为交易时间和交易日
+        if not self.is_trading_time():
+            print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 非交易时间或非交易日，跳过本次分析")
+            return
+            
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 开始新一轮分析...")
+        for code in self.codes:
+            self.analyze_single_code(code)
+        print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 本轮分析完成")
+
+    def start_monitoring(self, interval=30):
+        """
+        开始定时监控
+        interval: 间隔时间（秒）
+        """
+        print(f"开始定时监控，间隔 {interval} 秒")
+        
+        def run_periodically():
+            self.run_analysis()
+            # 设置下一次执行
+            timer = Timer(interval, run_periodically)
+            timer.daemon = True
+            timer.start()
+        
+        # 立即执行一次
+        run_periodically()
+
+
+def main():
+    # 配置需要监控的股票代码
+    codes = ["上证指数", "510050", "510500", "510300"]
+    
+    # 创建监控实例（debug模式默认关闭，可视化生成默认开启）
+    monitor = RealtimeMonitor(codes, debug=True, generate_visualization=False)
+    
+    # 开始定时监控（每30秒）
+    monitor.start_monitoring(30)
+    
+    # 保持程序运行
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("程序已退出")
+
+
+if __name__ == "__main__":
+    main()
