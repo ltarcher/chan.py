@@ -886,8 +886,8 @@ def main():
     # 配置需要监控的股票代码
     codes = ["上证指数", "510050", "510500", "510300"]
     
-    # 创建监控实例（debug模式默认关闭，可视化生成默认开启）
-    monitor = RealtimeMonitor(codes, debug=True, generate_visualization=False, enable_websocket=True)
+    # 创建监控实例（debug模式默认关闭，可视化生成默认关闭）
+    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False, enable_websocket=True)
     
     # 开始定时监控（每30秒）
     monitor.start_monitoring(30)
