@@ -695,7 +695,7 @@ class RealtimeMonitor:
     def is_trading_time(self):
         """
         判断当前是否为交易时间和交易日
-        交易时间：周一至周五 9:30-11:30, 13:00-15:00
+        交易时间：周一至周五 9:25-11:30, 13:00-15:00
         """
         # 如果debug模式启用，忽略交易日和交易时间限制
         if self.debug:
@@ -720,7 +720,7 @@ class RealtimeMonitor:
             
             # 判断是否为交易时间
             current_time = now.time()
-            morning_start = datetime.strptime("09:30", "%H:%M").time()
+            morning_start = datetime.strptime("09:25", "%H:%M").time()
             morning_end = datetime.strptime("11:30", "%H:%M").time()
             afternoon_start = datetime.strptime("13:00", "%H:%M").time()
             afternoon_end = datetime.strptime("15:00", "%H:%M").time()
