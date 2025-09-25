@@ -13,6 +13,8 @@ from Plot.PlotlyDriver import CPlotlyDriver
 from WeChatNotify.wxpusher import Wxpusher
 import qstock as qs
 
+from mcp_client import MCPClient
+
 try:
     import asyncio
     import websockets
@@ -26,7 +28,7 @@ except ImportError:
 class RealtimeMonitor:
     def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True, 
                  enable_websocket=False, websocket_host="localhost", websocket_port=8765,
-                 send_wechat_message=True):
+                 send_wechat_message=True, enable_mcp=False, mcp_baseurl="http://localhost:8000", mcp_transport="sse"):
         self.codes = codes if isinstance(codes, list) else [codes]
         self.data_src = data_src
         self.debug = debug
@@ -35,6 +37,11 @@ class RealtimeMonitor:
         self.enable_websocket = enable_websocket
         self.websocket_host = websocket_host
         self.websocket_port = websocket_port
+        self.enable_mcp = enable_mcp
+        self.mcp_baseurl = mcp_baseurl
+        self.mcp_transport = mcp_transport
+        
+        # 定义K线级别的枚举值
         self.lv_list = [
             KL_TYPE.K_MON,
             KL_TYPE.K_WEEK,
@@ -120,6 +127,13 @@ class RealtimeMonitor:
         
         # WebSocket客户端连接集合
         self.websocket_clients = set()
+
+        # 初始化mcp连接
+        if self.enable_mcp:
+            self.mcp_client = MCPClient(self.mcp_baseurl, self.mcp_transport)
+            self.mcp_client.connect()
+        else:
+            self.mcp_client = None
         
         # 配置锁，确保线程安全
         self.config_lock = Lock()
@@ -758,6 +772,9 @@ class RealtimeMonitor:
         print(f"开始定时监控，间隔 {interval} 秒")
         
         def run_periodically():
+            # 获取行情信息
+            self.get_market_data()
+            # 缠论分析
             self.run_analysis()
             # 设置下一次执行
             timer = Timer(interval, run_periodically)
@@ -766,6 +783,36 @@ class RealtimeMonitor:
         
         # 立即执行一次
         run_periodically()
+
+    # 获取行情信息
+    def get_market_data(self):
+        # 调用mcp获取行情信息
+        if not self.enable_mcp or not self.mcp_client:
+            return
+        try:
+            function_name = "get_index_realtime_data"
+            params = {
+                "codes": ["上证指数", "深证成指", "创业板指", "科创50", "恒生指数", "标普500", "纳斯达克", "道琼斯"],
+                "market": "沪深A"
+            }
+            market_data = asyncio.run(self.mcp_client.call_tool(function_name, params))
+
+            # 如果有WebSocket客户端连接，则广播行情数据
+            if self.enable_websocket and market_data:
+                import json
+                from datetime import datetime
+                market_update = {
+                    "type": "market_data_update",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "data": market_data
+                }
+                json_message = json.dumps(market_update, ensure_ascii=False)
+                self.broadcast_websocket_message(json_message)
+                
+        except ImportError:
+            print("无法导入mcp模块，跳过行情数据获取")
+        except Exception as e:
+            print(f"获取行情数据时出错: {e}")
 
     def start_websocket_server(self):
         """
@@ -887,7 +934,8 @@ def main():
     codes = ["上证指数", "510050", "510500", "510300", "159915", "588000"]
     
     # 创建监控实例（debug模式默认关闭，可视化生成默认关闭）
-    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False, enable_websocket=True)
+    monitor = RealtimeMonitor(codes, debug=False, generate_visualization=False, enable_websocket=True,
+                              enable_mcp=True, mcp_baseurl="http://localhost:8000")
     
     # 开始定时监控（每30秒）
     monitor.start_monitoring(30)

@@ -11,3 +11,7 @@ cos_config.yaml
 *.png
 output/*
 *.json
+backtest_results/*
+*.csv
+*.xlsx
+*.xls
