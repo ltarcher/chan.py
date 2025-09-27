@@ -776,7 +776,8 @@ class RealtimeMonitor:
     # 获取行情信息
     def get_market_data(self):
         # 调用mcp获取行情信息
-        codes = ["上证指数", "深证成指", "沪深300", "中证500", "中证1000", "科创50"]
+        codes = ["上证指数", "深证综指", "创业板指", "恒生指数", "美元指数", "30年国债ETF", 
+                 "510050", "510300", "510500",  "创业板ETF", "科创50ETF", "科创板50ETF", "513180"]
         market_index = index.data_service.get_index_realtime_data(codes)
         
         # 如果有WebSocket客户端连接，则广播行情数据

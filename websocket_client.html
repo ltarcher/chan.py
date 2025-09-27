@@ -138,11 +138,11 @@
         }
         
         .positive {
-            color: #28a745;
+            color: #dc3545; /* 红色 */
         }
         
         .negative {
-            color: #dc3545;
+            color: #28a745; /* 绿色 */
         }
         
         .signals-container {
@@ -464,7 +464,7 @@
                     const card = document.createElement('div');
                     card.className = 'market-card';
                     
-                    // 判断涨跌颜色
+                    // 判断涨跌颜色 - 涨红跌绿
                     const changeClass = (item.change_percent || item.涨幅 || 0) >= 0 ? 'positive' : 'negative';
                     const changeAmount = item.change_amount || ((item.price || item.最新 || 0) - (item.previous_close || item.昨收 || 0)) || 0;
                     
