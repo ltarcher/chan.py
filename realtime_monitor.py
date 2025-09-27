@@ -106,6 +106,10 @@ class RealtimeMonitor:
             "3a": "第三类买卖点(中枢在1类后面)",
             "3b": "第三类买卖点(中枢在1类前面)"
         }
+
+        # 仪表盘市场指数
+        self.market_codes = ["上证指数", "深证综指", "创业板指", "恒生指数", "美元指数", "30年国债ETF", 
+                            "510050", "510300", "510500",  "创业板ETF", "科创50ETF", "科创板50ETF", "513180"]
         
         # 初始化微信推送
         try:
@@ -763,6 +767,8 @@ class RealtimeMonitor:
         def run_periodically():
             # 获取行情信息
             self.get_market_data()
+            # 获取一些特殊指标(如全市场成交量、资金流入流出、两融数据、两融占比成交等)
+            self.get_special_indicators()
             # 缠论分析
             self.run_analysis()
             # 设置下一次执行
@@ -776,9 +782,7 @@ class RealtimeMonitor:
     # 获取行情信息
     def get_market_data(self):
         # 调用mcp获取行情信息
-        codes = ["上证指数", "深证综指", "创业板指", "恒生指数", "美元指数", "30年国债ETF", 
-                 "510050", "510300", "510500",  "创业板ETF", "科创50ETF", "科创板50ETF", "513180"]
-        market_index = index.data_service.get_index_realtime_data(codes)
+        market_index = index.data_service.get_index_realtime_data(self.market_codes)
         
         # 如果有WebSocket客户端连接，则广播行情数据
         if self.enable_websocket and market_index:
@@ -814,6 +818,17 @@ class RealtimeMonitor:
             json_message = json.dumps(market_update, ensure_ascii=False)
             print(f"广播行情数据到WebSocket客户端:{json_message}")
             self.broadcast_websocket_message(json_message)
+
+    def get_special_indicators(self):
+        # 获取所有股票的成交量、资金流入流出、两融数据、两融占比成交等
+
+        # 市场当前总成交
+        turnover = index.data_service.get_board_trade_realtime_data()
+
+        # 资金流入流出
+
+        # 两融数据
+
 
     def start_websocket_server(self):
         """
