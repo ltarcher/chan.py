@@ -10,3 +10,5 @@ PyExecJS
 websockets
 mcp==1.12.0
 aiohttp
+pyquery
+ta

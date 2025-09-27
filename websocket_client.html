@@ -72,6 +72,79 @@
             margin-right: 10px;
         }
         
+        .dashboard-container {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .dashboard-title {
+            text-align: center;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        
+        .market-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 10px;
+        }
+        
+        .market-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            padding: 10px;
+            background-color: #fafafa;
+            transition: all 0.3s ease;
+            font-size: 13px;
+        }
+        
+        .market-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        
+        .market-name {
+            font-weight: bold;
+            font-size: 15px;
+            margin-bottom: 8px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .market-data {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        
+        .market-field {
+            font-size: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .field-label {
+            color: #666;
+            margin-right: 5px;
+        }
+        
+        .field-value {
+            font-weight: bold;
+            text-align: right;
+        }
+        
+        .positive {
+            color: #28a745;
+        }
+        
+        .negative {
+            color: #dc3545;
+        }
+        
         .signals-container {
             display: flex;
             gap: 20px;
@@ -86,11 +159,12 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
+            font-size: 14px;
         }
         
         .signal-table th, .signal-table td {
             border: 1px solid #ddd;
-            padding: 12px;
+            padding: 8px;
             text-align: left;
         }
         
@@ -146,6 +220,18 @@
             .config-item label {
                 width: 120px;
             }
+            
+            .market-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .market-card {
+                font-size: 12px;
+            }
+            
+            .market-field {
+                font-size: 11px;
+            }
         }
     </style>
 </head>
@@ -173,6 +259,15 @@
                 <label for="messageSwitch">发送微信消息:</label>
                 <input type="checkbox" id="messageSwitch" onchange="updateWebSocketConfig('send_wechat_message', this.checked)" checked>
                 <span id="messageStatus">开启</span>
+            </div>
+        </div>
+        
+        <!-- 动态仪表盘 -->
+        <div class="dashboard-container">
+            <h2 class="dashboard-title">市场行情仪表盘</h2>
+            <div class="market-grid" id="marketGrid">
+                <!-- 行情卡片将在这里动态生成 -->
+                <div class="no-data">暂无行情数据</div>
             </div>
         </div>
         
@@ -228,6 +323,7 @@
                 this.isConnected = false;
                 this.newSignals = [];
                 this.disappearedSignals = [];
+                this.marketData = {}; // 存储行情数据
                 this.maxSignals = 100; // 最大保存信号数量
                 this.init();
             }
@@ -330,6 +426,120 @@
                         this.disappearedSignals = this.disappearedSignals.slice(0, this.maxSignals); // 限制数量
                         this.updateDisappearedSignalsTable();
                     }
+                } else if (data.type === 'market_data_update') {
+                    // 处理行情数据更新
+                    if (data.data) {
+                        // 更新内部存储的行情数据
+                        data.data.forEach(item => {
+                            // 使用代码作为键值存储数据
+                            const code = item.code || item.代码 || '';
+                            this.marketData[code] = {
+                                ...item,
+                                timestamp: data.timestamp
+                            };
+                        });
+                        
+                        // 更新仪表盘显示
+                        this.updateMarketDashboard();
+                    }
+                }
+            }
+            
+            // 更新市场行情仪表盘
+            updateMarketDashboard() {
+                const marketGrid = document.getElementById('marketGrid');
+                
+                // 清空现有内容
+                marketGrid.innerHTML = '';
+                
+                // 如果没有数据，显示提示信息
+                if (Object.keys(this.marketData).length === 0) {
+                    marketGrid.innerHTML = '<div class="no-data">暂无行情数据</div>';
+                    return;
+                }
+                
+                // 为每个市场数据创建卡片
+                for (const code in this.marketData) {
+                    const item = this.marketData[code];
+                    const card = document.createElement('div');
+                    card.className = 'market-card';
+                    
+                    // 判断涨跌颜色
+                    const changeClass = (item.change_percent || item.涨幅 || 0) >= 0 ? 'positive' : 'negative';
+                    const changeAmount = item.change_amount || ((item.price || item.最新 || 0) - (item.previous_close || item.昨收 || 0)) || 0;
+                    
+                    // 构造所有字段的展示内容
+                    card.innerHTML = `
+                        <div class="market-name">${item.name || item.名称 || ''} (${item.code || item.代码 || ''})</div>
+                        <div class="market-data">
+                            <div class="market-field">
+                                <span class="field-label">最新价:</span>
+                                <span class="field-value ${changeClass}">${(item.price || item.最新 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">涨跌幅:</span>
+                                <span class="field-value ${changeClass}">${(item.change_percent || item.涨幅 || 0) >= 0 ? '+' : ''}${(item.change_percent || item.涨幅 || 0).toFixed(2)}%</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">涨跌额:</span>
+                                <span class="field-value ${changeClass}">${changeAmount >= 0 ? '+' : ''}${changeAmount.toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">最高价:</span>
+                                <span class="field-value">${(item.high || item.最高 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">最低价:</span>
+                                <span class="field-value">${(item.low || item.最低 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">今开:</span>
+                                <span class="field-value">${(item.open || item.今开 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">昨收:</span>
+                                <span class="field-value">${(item.previous_close || item.昨收 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">换手率:</span>
+                                <span class="field-value">${(item.turnover_rate || item.换手率 || item.换手率 || 0).toFixed(2)}%</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">量比:</span>
+                                <span class="field-value">${(item.volume_ratio || item.量比 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">市盈率:</span>
+                                <span class="field-value">${(item.pe_ratio || item.市盈率 || 0).toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">成交量:</span>
+                                <span class="field-value">${Math.round((item.volume || item.成交量 || 0) / 10000).toLocaleString()}手</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">成交额:</span>
+                                <span class="field-value">¥${Math.round((item.amount || item.成交额 || 0) / 100000000).toLocaleString()}亿</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">总市值:</span>
+                                <span class="field-value">¥${Math.round((item.market_cap || item.总市值 || 0) / 100000000).toLocaleString()}亿</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">流通市值:</span>
+                                <span class="field-value">¥${Math.round((item.circulating_market_cap || item.流通市值 || 0) / 100000000).toLocaleString()}亿</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">市场:</span>
+                                <span class="field-value">${item.market || item.市场 || ''}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">时间:</span>
+                                <span class="field-value">${item.time || item.时间 || ''}</span>
+                            </div>
+                        </div>
+                    `;
+                    
+                    marketGrid.appendChild(card);
                 }
             }
             
