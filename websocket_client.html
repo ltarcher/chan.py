@@ -86,6 +86,26 @@
             margin-bottom: 15px;
         }
         
+        .view-toggle {
+            text-align: right;
+            margin-bottom: 10px;
+        }
+        
+        .view-toggle button {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            color: #495057;
+            padding: 5px 10px;
+            margin-left: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .view-toggle button.active {
+            background-color: #007bff;
+            color: white;
+        }
+        
         .market-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -142,6 +162,45 @@
         }
         
         .negative {
+            color: #28a745; /* 绿色 */
+        }
+        
+        /* 列表模式样式 */
+        .market-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        
+        .market-table th, .market-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: right;
+        }
+        
+        .market-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .market-table th:first-child, .market-table td:first-child {
+            text-align: left;
+        }
+        
+        .market-table tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .market-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .market-table .positive {
+            color: #dc3545; /* 红色 */
+        }
+        
+        .market-table .negative {
             color: #28a745; /* 绿色 */
         }
         
@@ -265,9 +324,41 @@
         <!-- 动态仪表盘 -->
         <div class="dashboard-container">
             <h2 class="dashboard-title">市场行情仪表盘</h2>
+            <div class="view-toggle">
+                <button id="cardViewBtn" class="active" onclick="switchView('card')">卡片模式</button>
+                <button id="listViewBtn" onclick="switchView('list')">列表模式</button>
+            </div>
             <div class="market-grid" id="marketGrid">
                 <!-- 行情卡片将在这里动态生成 -->
                 <div class="no-data">暂无行情数据</div>
+            </div>
+            <div id="marketTableContainer" style="display: none;">
+                <table class="market-table" id="marketTable">
+                    <thead>
+                        <tr>
+                            <th>名称(代码)</th>
+                            <th>最新价</th>
+                            <th>涨跌幅</th>
+                            <th>涨跌额</th>
+                            <th>最高价</th>
+                            <th>最低价</th>
+                            <th>今开</th>
+                            <th>昨收</th>
+                            <th>换手率</th>
+                            <th>量比</th>
+                            <th>市盈率</th>
+                            <th>成交量(手)</th>
+                            <th>成交额(亿)</th>
+                            <th>总市值(亿)</th>
+                            <th>流通市值(亿)</th>
+                            <th>市场</th>
+                            <th>时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="marketTableBody">
+                        <!-- 行情列表将在这里动态生成 -->
+                    </tbody>
+                </table>
             </div>
         </div>
         
@@ -317,6 +408,31 @@
     </div>
 
     <script>
+        // 当前视图模式 ('card' 或 'list')
+        let currentView = 'card';
+        
+        // 切换视图模式
+        function switchView(view) {
+            currentView = view;
+            
+            // 更新按钮状态
+            document.getElementById('cardViewBtn').classList.toggle('active', view === 'card');
+            document.getElementById('listViewBtn').classList.toggle('active', view === 'list');
+            
+            // 显示/隐藏对应视图
+            document.getElementById('marketGrid').style.display = view === 'card' ? 'grid' : 'none';
+            document.getElementById('marketTableContainer').style.display = view === 'list' ? 'block' : 'none';
+            
+            // 如果有数据，更新当前视图
+            if (window.client && Object.keys(window.client.marketData).length > 0) {
+                if (view === 'card') {
+                    window.client.updateMarketDashboard();
+                } else {
+                    window.client.updateMarketTable();
+                }
+            }
+        }
+        
         class ChanWebSocketClient {
             constructor() {
                 this.ws = null;
@@ -440,12 +556,16 @@
                         });
                         
                         // 更新仪表盘显示
-                        this.updateMarketDashboard();
+                        if (currentView === 'card') {
+                            this.updateMarketDashboard();
+                        } else {
+                            this.updateMarketTable();
+                        }
                     }
                 }
             }
             
-            // 更新市场行情仪表盘
+            // 更新市场行情仪表盘（卡片模式）
             updateMarketDashboard() {
                 const marketGrid = document.getElementById('marketGrid');
                 
@@ -540,6 +660,54 @@
                     `;
                     
                     marketGrid.appendChild(card);
+                }
+            }
+            
+            // 更新市场行情表格（列表模式）
+            updateMarketTable() {
+                const tableBody = document.getElementById('marketTableBody');
+                
+                // 清空现有内容
+                tableBody.innerHTML = '';
+                
+                // 如果没有数据，显示提示信息
+                if (Object.keys(this.marketData).length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="17" style="text-align: center;">暂无行情数据</td>`;
+                    tableBody.appendChild(row);
+                    return;
+                }
+                
+                // 为每个市场数据创建表格行
+                for (const code in this.marketData) {
+                    const item = this.marketData[code];
+                    
+                    // 判断涨跌颜色 - 涨红跌绿
+                    const changeClass = (item.change_percent || item.涨幅 || 0) >= 0 ? 'positive' : 'negative';
+                    const changeAmount = item.change_amount || ((item.price || item.最新 || 0) - (item.previous_close || item.昨收 || 0)) || 0;
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.name || item.名称 || ''} (${item.code || item.代码 || ''})</td>
+                        <td class="${changeClass}">${(item.price || item.最新 || 0).toFixed(2)}</td>
+                        <td class="${changeClass}">${(item.change_percent || item.涨幅 || 0) >= 0 ? '+' : ''}${(item.change_percent || item.涨幅 || 0).toFixed(2)}%</td>
+                        <td class="${changeClass}">${changeAmount >= 0 ? '+' : ''}${changeAmount.toFixed(2)}</td>
+                        <td>${(item.high || item.最高 || 0).toFixed(2)}</td>
+                        <td>${(item.low || item.最低 || 0).toFixed(2)}</td>
+                        <td>${(item.open || item.今开 || 0).toFixed(2)}</td>
+                        <td>${(item.previous_close || item.昨收 || 0).toFixed(2)}</td>
+                        <td>${(item.turnover_rate || item.换手率 || item.换手率 || 0).toFixed(2)}%</td>
+                        <td>${(item.volume_ratio || item.量比 || 0).toFixed(2)}</td>
+                        <td>${(item.pe_ratio || item.市盈率 || 0).toFixed(2)}</td>
+                        <td>${Math.round((item.volume || item.成交量 || 0) / 10000).toLocaleString()}</td>
+                        <td>¥${Math.round((item.amount || item.成交额 || 0) / 100000000).toLocaleString()}</td>
+                        <td>¥${Math.round((item.market_cap || item.总市值 || 0) / 100000000).toLocaleString()}</td>
+                        <td>¥${Math.round((item.circulating_market_cap || item.流通市值 || 0) / 100000000).toLocaleString()}</td>
+                        <td>${item.market || item.市场 || ''}</td>
+                        <td>${item.time || item.时间 || ''}</td>
+                    `;
+                    
+                    tableBody.appendChild(row);
                 }
             }
             
