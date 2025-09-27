@@ -267,6 +267,45 @@
             background-color: #28a745;
         }
         
+        .tab-container {
+            margin-top: 20px;
+        }
+        
+        .tab-header {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .tab-button {
+            padding: 8px 16px;
+            border: 1px solid #dee2e6;
+            background-color: #f8f9fa;
+            color: #495057;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .tab-button:hover {
+            background-color: #e9ecef;
+        }
+        
+        .tab-button.active {
+            background-color: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
         .status-disconnected {
             background-color: #dc3545;
         }
@@ -302,107 +341,125 @@
             WebSocket连接状态: <span class="status-indicator status-disconnected"></span> 未连接
         </div>
         
-        <div class="config-panel">
-            <h2>配置控制面板</h2>
-            <div class="config-item">
-                <label for="debugSwitch">调试模式:</label>
-                <input type="checkbox" id="debugSwitch" onchange="updateWebSocketConfig('debug', this.checked)">
-                <span id="debugStatus">关闭</span>
-            </div>
-            <div class="config-item">
-                <label for="visualizationSwitch">可视化生成:</label>
-                <input type="checkbox" id="visualizationSwitch" onchange="updateWebSocketConfig('generate_visualization', this.checked)" checked>
-                <span id="visualizationStatus">开启</span>
-            </div>
-            <div class="config-item">
-                <label for="messageSwitch">发送微信消息:</label>
-                <input type="checkbox" id="messageSwitch" onchange="updateWebSocketConfig('send_wechat_message', this.checked)" checked>
-                <span id="messageStatus">开启</span>
-            </div>
-        </div>
-        
-        <!-- 动态仪表盘 -->
-        <div class="dashboard-container">
-            <h2 class="dashboard-title">市场行情仪表盘</h2>
-            <div class="view-toggle">
-                <button id="cardViewBtn" class="active" onclick="switchView('card')">卡片模式</button>
-                <button id="listViewBtn" onclick="switchView('list')">列表模式</button>
-            </div>
-            <div class="market-grid" id="marketGrid">
-                <!-- 行情卡片将在这里动态生成 -->
-                <div class="no-data">暂无行情数据</div>
-            </div>
-            <div id="marketTableContainer" style="display: none;">
-                <table class="market-table" id="marketTable">
-                    <thead>
-                        <tr>
-                            <th>名称(代码)</th>
-                            <th>最新价</th>
-                            <th>涨跌幅</th>
-                            <th>涨跌额</th>
-                            <th>最高价</th>
-                            <th>最低价</th>
-                            <th>今开</th>
-                            <th>昨收</th>
-                            <th>换手率</th>
-                            <th>量比</th>
-                            <th>市盈率</th>
-                            <th>成交量(手)</th>
-                            <th>成交额(亿)</th>
-                            <th>总市值(亿)</th>
-                            <th>流通市值(亿)</th>
-                            <th>市场</th>
-                            <th>时间</th>
-                        </tr>
-                    </thead>
-                    <tbody id="marketTableBody">
-                        <!-- 行情列表将在这里动态生成 -->
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <div class="signals-container">
-            <div class="signal-section">
-                <h2>新信号</h2>
-                <table class="signal-table" id="newSignalsTable">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>股票代码</th>
-                            <th>级别</th>
-                            <th>价格</th>
-                            <th>信号类型</th>
-                            <th>操作建议</th>
-                        </tr>
-                    </thead>
-                    <tbody id="newSignalsBody">
-                        <tr>
-                            <td colspan="6" style="text-align: center;">暂无新信号</td>
-                        </tr>
-                    </tbody>
-                </table>
+        <!-- 标签页 -->
+        <div class="tab-container">
+            <div class="tab-header">
+                <div class="tab-button active" onclick="switchTab('market')">市场行情</div>
+                <div class="tab-button" onclick="switchTab('signals')">信号</div>
+                <div class="tab-button" onclick="switchTab('config')">配置控制面板</div>
             </div>
             
-            <div class="signal-section">
-                <h2>消失信号</h2>
-                <table class="signal-table" id="disappearedSignalsTable">
-                    <thead>
-                        <tr>
-                            <th>时间</th>
-                            <th>股票代码</th>
-                            <th>级别</th>
-                            <th>信号类型</th>
-                            <th>操作建议</th>
-                            <th>原因</th>
-                        </tr>
-                    </thead>
-                    <tbody id="disappearedSignalsBody">
-                        <tr>
-                            <td colspan="6" style="text-align: center;">暂无消失信号</td>
-                        </tr>
-                    </tbody>
-                </table>
+            <!-- 市场行情标签页 -->
+            <div id="market-tab" class="tab-content active">
+                <!-- 动态仪表盘 -->
+                <div class="dashboard-container">
+                    <h2 class="dashboard-title">市场行情仪表盘</h2>
+                    <div class="view-toggle">
+                        <button id="cardViewBtn" class="active" onclick="switchView('card')">卡片模式</button>
+                        <button id="listViewBtn" onclick="switchView('list')">列表模式</button>
+                    </div>
+                    <div class="market-grid" id="marketGrid">
+                        <!-- 行情卡片将在这里动态生成 -->
+                        <div class="no-data">暂无行情数据</div>
+                    </div>
+                    <div id="marketTableContainer" style="display: none;">
+                        <table class="market-table" id="marketTable">
+                            <thead>
+                                <tr>
+                                    <th>名称(代码)</th>
+                                    <th>最新价</th>
+                                    <th>涨跌幅</th>
+                                    <th>涨跌额</th>
+                                    <th>最高价</th>
+                                    <th>最低价</th>
+                                    <th>今开</th>
+                                    <th>昨收</th>
+                                    <th>换手率</th>
+                                    <th>量比</th>
+                                    <th>市盈率</th>
+                                    <th>成交量(手)</th>
+                                    <th>成交额(亿)</th>
+                                    <th>总市值(亿)</th>
+                                    <th>流通市值(亿)</th>
+                                    <th>市场</th>
+                                    <th>时间</th>
+                                </tr>
+                            </thead>
+                            <tbody id="marketTableBody">
+                                <!-- 行情列表将在这里动态生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 信号标签页 -->
+            <div id="signals-tab" class="tab-content">
+                <div class="signals-container">
+                    <div class="signal-section">
+                        <h2>新信号</h2>
+                        <table class="signal-table" id="newSignalsTable">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>股票代码</th>
+                                    <th>级别</th>
+                                    <th>价格</th>
+                                    <th>信号类型</th>
+                                    <th>操作建议</th>
+                                </tr>
+                            </thead>
+                            <tbody id="newSignalsBody">
+                                <tr>
+                                    <td colspan="6" style="text-align: center;">暂无新信号</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="signal-section">
+                        <h2>消失信号</h2>
+                        <table class="signal-table" id="disappearedSignalsTable">
+                            <thead>
+                                <tr>
+                                    <th>时间</th>
+                                    <th>股票代码</th>
+                                    <th>级别</th>
+                                    <th>信号类型</th>
+                                    <th>操作建议</th>
+                                    <th>原因</th>
+                                </tr>
+                            </thead>
+                            <tbody id="disappearedSignalsBody">
+                                <tr>
+                                    <td colspan="6" style="text-align: center;">暂无消失信号</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 配置控制面板标签页 -->
+            <div id="config-tab" class="tab-content">
+                <div class="config-panel">
+                    <h2>配置控制面板</h2>
+                    <div class="config-item">
+                        <label for="debugSwitch">调试模式:</label>
+                        <input type="checkbox" id="debugSwitch" onchange="updateWebSocketConfig('debug', this.checked)">
+                        <span id="debugStatus">关闭</span>
+                    </div>
+                    <div class="config-item">
+                        <label for="visualizationSwitch">可视化生成:</label>
+                        <input type="checkbox" id="visualizationSwitch" onchange="updateWebSocketConfig('generate_visualization', this.checked)" checked>
+                        <span id="visualizationStatus">开启</span>
+                    </div>
+                    <div class="config-item">
+                        <label for="messageSwitch">发送微信消息:</label>
+                        <input type="checkbox" id="messageSwitch" onchange="updateWebSocketConfig('send_wechat_message', this.checked)" checked>
+                        <span id="messageStatus">开启</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -410,6 +467,25 @@
     <script>
         // 当前视图模式 ('card' 或 'list')
         let currentView = 'card';
+        
+        // 切换标签页
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab-button').forEach(button => {
+                button.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            // 为点击的标签按钮添加active类
+            event.currentTarget.classList.add('active');
+        }
         
         // 切换视图模式
         function switchView(view) {
