@@ -346,6 +346,7 @@
             <div class="tab-header">
                 <div class="tab-button active" onclick="switchTab('market')">市场行情</div>
                 <div class="tab-button" onclick="switchTab('signals')">信号</div>
+                <div class="tab-button" onclick="switchTab('options')">期权波动率</div>
                 <div class="tab-button" onclick="switchTab('config')">配置控制面板</div>
             </div>
             
@@ -461,12 +462,47 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- 期权波动率标签页 -->
+            <div id="options-tab" class="tab-content">
+                <div class="dashboard-container">
+                    <h2 class="dashboard-title">期权波动率指数</h2>
+                    <div class="market-grid" id="optionsGrid">
+                        <!-- 期权波动率数据将在这里动态生成 -->
+                        <div class="no-data">暂无期权波动率数据</div>
+                    </div>
+                    <div id="optionsTableContainer" style="display: none;">
+                        <table class="market-table" id="optionsTable">
+                            <thead>
+                                <tr>
+                                    <th>名称</th>
+                                    <th>最新值</th>
+                                    <th>涨跌幅</th>
+                                    <th>日线数据点</th>
+                                    <th>分钟线数据点</th>
+                                    <th>时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="optionsTableBody">
+                                <!-- 期权波动率列表将在这里动态生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="view-toggle">
+                        <button id="optionsCardViewBtn" class="active" onclick="switchOptionsView('card')">卡片模式</button>
+                        <button id="optionsListViewBtn" onclick="switchOptionsView('list')">列表模式</button>
+                    </div>
+                </div>
+                <div id="options-debug-info"></div> <!-- 调试信息显示区域 -->
+            </div>
         </div>
     </div>
 
     <script>
         // 当前视图模式 ('card' 或 'list')
         let currentView = 'card';
+        let currentOptionsView = 'card';
         
         // 切换标签页
         function switchTab(tabName) {
@@ -484,7 +520,9 @@
             document.getElementById(`${tabName}-tab`).classList.add('active');
             
             // 为点击的标签按钮添加active类
-            event.currentTarget.classList.add('active');
+            if (event && event.currentTarget) {
+                event.currentTarget.classList.add('active');
+            }
         }
         
         // 切换视图模式
@@ -509,6 +547,36 @@
             }
         }
         
+        // 切换期权波动率视图模式
+        function switchOptionsView(view) {
+            console.log('切换期权视图模式:', view); // 调试信息
+            currentOptionsView = view;
+            
+            // 更新按钮状态
+            document.getElementById('optionsCardViewBtn').classList.toggle('active', view === 'card');
+            document.getElementById('optionsListViewBtn').classList.toggle('active', view === 'list');
+            
+            // 显示/隐藏对应视图
+            document.getElementById('optionsGrid').style.display = view === 'card' ? 'grid' : 'none';
+            document.getElementById('optionsTableContainer').style.display = view === 'list' ? 'block' : 'none';
+            
+            // 如果有数据，更新当前视图
+            if (window.client && window.client.optionsData) {
+                if (view === 'card') {
+                    window.client.updateOptionsDashboard();
+                } else {
+                    window.client.updateOptionsTable();
+                }
+            }
+        }
+        
+        // 显示期权波动率K线图
+        function showOptionsChart(optionName) {
+            if (window.client) {
+                window.client.showOptionsChart(optionName);
+            }
+        }
+        
         class ChanWebSocketClient {
             constructor() {
                 this.ws = null;
@@ -516,7 +584,9 @@
                 this.newSignals = [];
                 this.disappearedSignals = [];
                 this.marketData = {}; // 存储行情数据
+                this.optionsData = {}; // 存储期权波动率数据
                 this.maxSignals = 100; // 最大保存信号数量
+                console.log('初始化WebSocket客户端'); // 调试信息
                 this.init();
             }
             
@@ -528,6 +598,36 @@
                         this.connect();
                     }
                 }, 30000);
+            }
+            
+            // 清理包含无效值的数据
+            cleanData(obj) {
+                if (obj === null || obj === undefined) {
+                    return null;
+                }
+                
+                if (typeof obj === 'number') {
+                    if (isNaN(obj) || !isFinite(obj)) {
+                        return null;
+                    }
+                    return obj;
+                }
+                
+                if (typeof obj === 'object') {
+                    if (Array.isArray(obj)) {
+                        return obj.map(item => this.cleanData(item));
+                    } else {
+                        const cleaned = {};
+                        for (const key in obj) {
+                            if (obj.hasOwnProperty(key)) {
+                                cleaned[key] = this.cleanData(obj[key]);
+                            }
+                        }
+                        return cleaned;
+                    }
+                }
+                
+                return obj;
             }
             
             connect() {
@@ -543,10 +643,16 @@
                     
                     this.ws.onmessage = (event) => {
                         try {
-                            const data = JSON.parse(event.data);
+                            // 解析JSON数据
+                            let data = JSON.parse(event.data);
+                            
+                            // 清理数据中的NaN和Infinity值
+                            data = this.cleanData(data);
+                            
                             this.handleMessage(data);
                         } catch (error) {
                             console.error('解析WebSocket消息失败:', error);
+                            console.error('原始数据:', event.data);
                         }
                     };
                     
@@ -636,6 +742,31 @@
                             this.updateMarketDashboard();
                         } else {
                             this.updateMarketTable();
+                        }
+                    }
+                } else if (data.type === 'options_data_update') {
+                    // 处理期权波动率数据更新
+                    console.log('收到期权波动率数据:', data); // 调试信息
+                    if (data.data) {
+                        // 更新内部存储的期权波动率数据
+                        this.optionsData = {};
+                        data.data.forEach(item => {
+                            // 使用名称作为键值存储数据
+                            const name = item.name || '';
+                            this.optionsData[name] = item;
+                        });
+                        console.log('处理后的期权数据:', this.optionsData); // 调试信息
+                        
+                        // 更新期权波动率仪表盘显示
+                        if (currentOptionsView === 'card') {
+                            this.updateOptionsDashboard();
+                        } else {
+                            this.updateOptionsTable();
+                        }
+                        
+                        // 如果在K线图视图，更新K线图
+                        if (this.currentOptionsChart) {
+                            this.updateOptionsChart();
                         }
                     }
                 }
@@ -784,6 +915,275 @@
                     `;
                     
                     tableBody.appendChild(row);
+                }
+            }
+            
+            // 更新期权波动率仪表盘（卡片模式）
+            updateOptionsDashboard() {
+                const optionsGrid = document.getElementById('optionsGrid');
+                console.log('更新期权波动率仪表盘，数据:', this.optionsData); // 调试信息
+                
+                // 清空现有内容
+                optionsGrid.innerHTML = '';
+                
+                // 如果没有数据，显示提示信息
+                if (Object.keys(this.optionsData).length === 0) {
+                    optionsGrid.innerHTML = '<div class="no-data">暂无期权波动率数据</div>';
+                    return;
+                }
+                
+                // 为每个期权波动率数据创建卡片
+                for (const name in this.optionsData) {
+                    const item = this.optionsData[name];
+                    console.log('处理期权项目:', name, item); // 调试信息
+                    const card = document.createElement('div');
+                    card.className = 'market-card';
+                    
+                    // 获取最新数据点
+                    let latestData = null;
+                    let changePercent = 0;
+                    let isDayData = false;
+                    
+                    // 优先使用日线数据计算涨跌幅，如果没有则使用分钟线数据
+                    if (item.day_data && item.day_data.length > 0) {
+                        const dayData = item.day_data;
+                        latestData = dayData[dayData.length - 1];
+                        if (dayData.length > 1) {
+                            const prevData = dayData[dayData.length - 2];
+                            if (prevData.close !== 0) {
+                                changePercent = ((latestData.close - prevData.close) / prevData.close) * 100;
+                            }
+                        }
+                        isDayData = true;
+                    } else if (item.min_data && item.min_data.length > 0) {
+                        const minData = item.min_data;
+                        latestData = minData[minData.length - 1];
+                        if (minData.length > 1) {
+                            const prevData = minData[minData.length - 2];
+                            if (prevData.qvix !== 0) {
+                                changePercent = ((latestData.qvix - prevData.qvix) / prevData.qvix) * 100;
+                            }
+                        }
+                    }
+                    
+                    // 判断涨跌颜色 - 涨红跌绿
+                    const changeClass = (changePercent || 0) >= 0 ? 'positive' : 'negative';
+                    const latestValue = isDayData ? (latestData ? latestData.close : 0) : (latestData ? latestData.qvix : 0);
+                    
+                    // 构造所有字段的展示内容
+                    card.innerHTML = `
+                        <div class="market-name">${item.name || ''}</div>
+                        <div class="market-data">
+                            <div class="market-field">
+                                <span class="field-label">最新值:</span>
+                                <span class="field-value ${changeClass}">${latestValue.toFixed(2)}</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">涨跌幅:</span>
+                                <span class="field-value ${changeClass}">${(changePercent || 0) >= 0 ? '+' : ''}${(changePercent || 0).toFixed(2)}%</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">日线数据:</span>
+                                <span class="field-value">${item.day_data ? item.day_data.length : 0} 点</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">分钟线:</span>
+                                <span class="field-value">${item.min_data ? item.min_data.length : 0} 点</span>
+                            </div>
+                            <div class="market-field">
+                                <span class="field-label">时间:</span>
+                                <span class="field-value">${latestData ? (isDayData ? latestData.date : latestData.time) : ''}</span>
+                            </div>
+                            <div class="market-field">
+                                <button onclick="showOptionsChart('${name.replace(/'/g, "\\'")}')">查看K线图</button>
+                            </div>
+                        </div>
+                    `;
+                    
+                    optionsGrid.appendChild(card);
+                }
+            }
+            
+            // 更新期权波动率表格（列表模式）
+            updateOptionsTable() {
+                const tableBody = document.getElementById('optionsTableBody');
+                console.log('更新期权波动率表格，数据:', this.optionsData); // 调试信息
+                
+                // 清空现有内容
+                tableBody.innerHTML = '';
+                
+                // 如果没有数据，显示提示信息
+                if (Object.keys(this.optionsData).length === 0) {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td colspan="7" style="text-align: center;">暂无期权波动率数据</td>`;
+                    tableBody.appendChild(row);
+                    return;
+                }
+                
+                // 为每个期权波动率数据创建表格行
+                for (const name in this.optionsData) {
+                    const item = this.optionsData[name];
+                    console.log('处理期权表格项目:', name, item); // 调试信息
+                    
+                    // 获取最新数据点
+                    let latestData = null;
+                    let changePercent = 0;
+                    let isDayData = false;
+                    
+                    // 优先使用日线数据计算涨跌幅，如果没有则使用分钟线数据
+                    if (item.day_data && item.day_data.length > 0) {
+                        const dayData = item.day_data;
+                        latestData = dayData[dayData.length - 1];
+                        if (dayData.length > 1) {
+                            const prevData = dayData[dayData.length - 2];
+                            if (prevData.close !== 0) {
+                                changePercent = ((latestData.close - prevData.close) / prevData.close) * 100;
+                            }
+                        }
+                        isDayData = true;
+                    } else if (item.min_data && item.min_data.length > 0) {
+                        const minData = item.min_data;
+                        latestData = minData[minData.length - 1];
+                        if (minData.length > 1) {
+                            const prevData = minData[minData.length - 2];
+                            if (prevData.qvix !== 0) {
+                                changePercent = ((latestData.qvix - prevData.qvix) / prevData.qvix) * 100;
+                            }
+                        }
+                    }
+                    
+                    // 判断涨跌颜色 - 涨红跌绿
+                    const changeClass = (changePercent || 0) >= 0 ? 'positive' : 'negative';
+                    const latestValue = isDayData ? (latestData ? latestData.close : 0) : (latestData ? latestData.qvix : 0);
+                    const timeValue = latestData ? (isDayData ? latestData.date : latestData.time) : '';
+                    
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${item.name || ''}</td>
+                        <td class="${changeClass}">${latestValue.toFixed(2)}</td>
+                        <td class="${changeClass}">${(changePercent || 0) >= 0 ? '+' : ''}${(changePercent || 0).toFixed(2)}%</td>
+                        <td>${item.day_data ? item.day_data.length : 0}</td>
+                        <td>${item.min_data ? item.min_data.length : 0}</td>
+                        <td>${timeValue}</td>
+                        <td><button onclick="showOptionsChart('${name.replace(/'/g, "\\'")}')">查看K线图</button></td>
+                    `;
+                    
+                    tableBody.appendChild(row);
+                }
+            }
+            
+            // 显示期权波动率K线图
+            showOptionsChart(optionName) {
+                const item = this.optionsData[optionName];
+                if (!item) return;
+                
+                // 创建或更新图表容器
+                let chartContainer = document.getElementById('optionsChartContainer');
+                if (!chartContainer) {
+                    chartContainer = document.createElement('div');
+                    chartContainer.id = 'optionsChartContainer';
+                    chartContainer.style.marginTop = '20px';
+                    chartContainer.style.height = '500px';
+                    document.getElementById('options-tab').appendChild(chartContainer);
+                }
+                
+                // 绘制K线图
+                this.drawOptionsChart(chartContainer, item, optionName);
+                
+                // 记录当前显示图表的期权
+                this.currentOptionsChart = optionName;
+            }
+            
+            // 绘制期权波动率K线图
+            drawOptionsChart(container, item, optionName) {
+                // 清空容器
+                container.innerHTML = '';
+                
+                // 创建图表标题
+                const title = document.createElement('h3');
+                title.textContent = `${optionName} 波动率K线图`;
+                title.style.textAlign = 'center';
+                container.appendChild(title);
+                
+                // 如果没有数据，显示提示信息
+                if ((!item.min_data || item.min_data.length === 0) && 
+                    (!item.day_data || item.day_data.length === 0)) {
+                    const noData = document.createElement('div');
+                    noData.textContent = '暂无数据';
+                    noData.style.textAlign = 'center';
+                    noData.style.padding = '50px';
+                    container.appendChild(noData);
+                    return;
+                }
+                
+                // 创建选项卡用于切换日线和分钟线
+                const tabContainer = document.createElement('div');
+                tabContainer.style.marginBottom = '10px';
+                
+                const dayTab = document.createElement('button');
+                dayTab.textContent = '日线数据';
+                dayTab.onclick = () => this.switchChartType(container, item, optionName, 'day');
+                dayTab.style.marginRight = '5px';
+                
+                const minTab = document.createElement('button');
+                minTab.textContent = '分钟线数据';
+                minTab.onclick = () => this.switchChartType(container, item, optionName, 'min');
+                minTab.style.marginRight = '5px';
+                
+                tabContainer.appendChild(dayTab);
+                tabContainer.appendChild(minTab);
+                container.appendChild(tabContainer);
+                
+                // 默认显示日线数据
+                this.renderChartContent(container, item, 'day');
+            }
+            
+            // 切换图表类型
+            switchChartType(container, item, optionName, type) {
+                // 清除之前的内容（保留标题和选项卡）
+                while (container.children.length > 2) {
+                    container.removeChild(container.lastChild);
+                }
+                
+                // 显示对应类型的数据
+                this.renderChartContent(container, item, type);
+            }
+            
+            // 渲染图表内容
+            renderChartContent(container, item, type) {
+                const chartDiv = document.createElement('div');
+                chartDiv.style.height = '400px';
+                chartDiv.style.overflow = 'auto';
+                chartDiv.style.border = '1px solid #ddd';
+                chartDiv.style.padding = '10px';
+                chartDiv.style.fontFamily = 'monospace';
+                chartDiv.style.fontSize = '12px';
+                
+                if (type === 'day' && item.day_data && item.day_data.length > 0) {
+                    let dayText = "日期\t\t开盘价\t最高价\t最低价\t收盘价\n";
+                    dayText += "----\t\t------\t------\t------\t------\n";
+                    item.day_data.slice(-30).forEach(point => {  // 只显示最近30个数据点
+                        dayText += `${point.date}\t${point.open.toFixed(2)}\t${point.high.toFixed(2)}\t${point.low.toFixed(2)}\t${point.close.toFixed(2)}\n`;
+                    });
+                    chartDiv.textContent = dayText;
+                } else if (type === 'min' && item.min_data && item.min_data.length > 0) {
+                    let minText = "时间\t\t\t波动率\n";
+                    minText += "----\t\t\t------\n";
+                    item.min_data.slice(-30).forEach(point => {  // 只显示最近30个数据点
+                        minText += `${point.time}\t\t${point.qvix.toFixed(2)}\n`;
+                    });
+                    chartDiv.textContent = minText;
+                } else {
+                    chartDiv.textContent = '暂无数据';
+                }
+                
+                container.appendChild(chartDiv);
+            }
+            
+            // 更新期权K线图
+            updateOptionsChart() {
+                if (this.currentOptionsChart) {
+                    this.showOptionsChart(this.currentOptionsChart);
                 }
             }
             

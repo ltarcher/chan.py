@@ -25,6 +25,7 @@ except ImportError:
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import StockMCP.mcp_index as index
+import StockMCP.mcp_option_qvix as option_qvix
 
 class RealtimeMonitor:
     def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True, 
@@ -139,6 +140,14 @@ class RealtimeMonitor:
         # 启动WebSocket服务器
         if self.enable_websocket and WEBSOCKET_AVAILABLE:
             self.start_websocket_server()
+
+        # 初始化数据服务
+        try:
+            index.intitialize_data_service()
+            option_qvix.initialize_data_service()
+            option_qvix.data_service.set_proxy(proxy="socks5://127.0.0.1:1080")
+        except Exception as e:
+            print(f"期权QVIX数据服务初始化失败: {e}")
 
     def get_kline_level_name(self, level):
         """
@@ -769,6 +778,10 @@ class RealtimeMonitor:
             self.get_market_data()
             # 获取一些特殊指标(如全市场成交量、资金流入流出、两融数据、两融占比成交等)
             self.get_special_indicators()
+
+            # 获取期权波动率数据并广播
+            self.get_options_volatility_data()
+
             # 缠论分析
             self.run_analysis()
             # 设置下一次执行
@@ -829,6 +842,108 @@ class RealtimeMonitor:
 
         # 两融数据
 
+
+    def get_options_volatility_data(self):
+        """获取期权波动率数据并广播到WebSocket客户端"""
+        if not self.enable_websocket:
+            return
+            
+        try:
+            options_data = []
+            
+            # 导入需要的库
+            import pandas as pd
+            import numpy as np
+            import math
+            
+            def clean_nan_values(data):
+                """
+                清理数据中的NaN值，将其转换为None（在JSON中会变成null）
+                """
+                if isinstance(data, dict):
+                    return {key: clean_nan_values(value) for key, value in data.items()}
+                elif isinstance(data, list):
+                    return [clean_nan_values(item) for item in data]
+                elif isinstance(data, float):
+                    # 检查是否为NaN或无穷大
+                    if math.isnan(data) or math.isinf(data):
+                        return None
+                    return data
+                elif isinstance(data, (int, str, bool)) or data is None:
+                    return data
+                else:
+                    # 对于其他类型，尝试转换为字符串，如果失败则返回None
+                    try:
+                        if pd.isna(data):
+                            return None
+                        return data
+                    except:
+                        return None
+        
+            # 定义要获取的期权类型和对应的函数
+            option_types = [
+                {"name": "50ETF期权波动率(QVIX)", "code": "510050", 
+                 "min_func": option_qvix.data_service.get_50etf_min_qvix,
+                 "day_func": option_qvix.data_service.get_50etf_qvix},
+                {"name": "300ETF期权波动率(QVIX)", "code": "510300", 
+                 "min_func": option_qvix.data_service.get_300etf_min_qvix,
+                 "day_func": option_qvix.data_service.get_300etf_qvix},
+                {"name": "500ETF期权波动率(QVIX)", "code": "510500", 
+                 "min_func": option_qvix.data_service.get_500etf_min_qvix,
+                 "day_func": option_qvix.data_service.get_500etf_qvix},
+                {"name": "创业板期权波动率(QVIX)", "code": "创业板", 
+                 "min_func": option_qvix.data_service.get_cyb_min_qvix,
+                 "day_func": option_qvix.data_service.get_cyb_qvix},
+                {"name": "科创板期权波动率(QVIX)", "code": "科创板", 
+                 "min_func": option_qvix.data_service.get_kcb_min_qvix,
+                 "day_func": option_qvix.data_service.get_kcb_qvix},
+                {"name": "100ETF期权波动率(QVIX)", "code": "159919", 
+                 "min_func": option_qvix.data_service.get_100etf_min_qvix,
+                 "day_func": option_qvix.data_service.get_100etf_qvix},
+            ]
+            
+            # 获取每种期权的数据
+            for option_type in option_types:
+                try:
+                    # 获取分钟线数据
+                    min_data = option_type["min_func"]()
+                    # 获取日线数据
+                    day_data = option_type["day_func"]()
+                    
+                    print(f"期权 {option_type['name']} 数据: 分钟线={len(min_data) if min_data else 0}, 日线={len(day_data) if day_data else 0}")  # 调试信息
+                    
+                    # 清理数据中的NaN值
+                    if min_data:
+                        min_data = clean_nan_values(min_data)
+                    if day_data:
+                        day_data = clean_nan_values(day_data)
+                    
+                    option_info = {
+                        "name": option_type["name"],
+                        "code": option_type["code"],
+                        "min_data": min_data,
+                        "day_data": day_data,
+                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    options_data.append(option_info)
+                except Exception as e:
+                    print(f"获取{option_type['name']}数据失败: {e}")
+            
+            print(f"总共获取到 {len(options_data)} 个期权数据")  # 调试信息
+            
+            # 广播期权波动率数据到WebSocket客户端
+            if options_data:
+                options_update = {
+                    "type": "options_data_update",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "data": options_data
+                }
+                json_message = json.dumps(options_update, ensure_ascii=False)
+                print(f"广播期权波动率数据到WebSocket客户端: {json_message}")
+                self.broadcast_websocket_message(json_message)
+                
+        except Exception as e:
+            print(f"获取期权波动率数据时出错: {e}")
 
     def start_websocket_server(self):
         """
@@ -946,8 +1061,6 @@ class RealtimeMonitor:
 
 
 def main():
-
-    index.intitialize_data_service()
 
     # 配置需要监控的股票代码
     codes = ["上证指数", "510050", "510500", "510300"]
