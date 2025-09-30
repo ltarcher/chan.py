@@ -467,6 +467,10 @@
             <div id="options-tab" class="tab-content">
                 <div class="dashboard-container">
                     <h2 class="dashboard-title">期权波动率指数</h2>
+                    <div class="view-toggle">
+                        <button id="optionsCardViewBtn" class="active" onclick="switchOptionsView('card')">卡片模式</button>
+                        <button id="optionsListViewBtn" onclick="switchOptionsView('list')">列表模式</button>
+                    </div>
                     <div class="market-grid" id="optionsGrid">
                         <!-- 期权波动率数据将在这里动态生成 -->
                         <div class="no-data">暂无期权波动率数据</div>
@@ -488,10 +492,6 @@
                                 <!-- 期权波动率列表将在这里动态生成 -->
                             </tbody>
                         </table>
-                    </div>
-                    <div class="view-toggle">
-                        <button id="optionsCardViewBtn" class="active" onclick="switchOptionsView('card')">卡片模式</button>
-                        <button id="optionsListViewBtn" onclick="switchOptionsView('list')">列表模式</button>
                     </div>
                 </div>
                 <div id="options-debug-info"></div> <!-- 调试信息显示区域 -->
