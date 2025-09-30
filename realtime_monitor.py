@@ -1030,7 +1030,9 @@ class RealtimeMonitor:
         # 在新线程中发送消息，避免阻塞
         def send_messages():
             disconnected_clients = set()
-            for client in self.websocket_clients:
+            # 创建websocket_clients的副本以避免在遍历时修改集合
+            clients_copy = self.websocket_clients.copy()
+            for client in clients_copy:
                 try:
                     # 直接在新线程中创建事件循环并发送消息
                     loop = asyncio.new_event_loop()
