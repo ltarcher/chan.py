@@ -812,7 +812,7 @@
                 card.className = 'market-card';
                 
                 // 构造特殊指标展示内容
-                let specialDataHTML = '<div class="market-name">市场特殊指标</div><div class="market-data">';
+                let specialDataHTML = '<div class="market-name">市场成交指标</div><div class="market-data">';
                 
                 // 市场当前总成交
                 if (this.specialData["市场当前总成交"]) {
@@ -877,7 +877,7 @@
                 }
                 
                 // 为市场资金流入流出数据创建单独的卡片
-                if (this.specialData["市场资金流入流出"] && this.specialData["市场资金流入流出"].data) {
+                if (this.specialData["市场资金流入流出"] && this.specialData["市场资金流入流出"].数据) {
                     this.createMoneyFlowCard(this.specialData["市场资金流入流出"]);
                 }
             }
@@ -1530,8 +1530,9 @@
                 if (Array.isArray(flowData)) {
                     // 为每个市场创建资金流入流出信息
                     flowData.forEach(item => {
-                        // 计算净流入（负数表示净流出）
-                        const netFlow = item.主力净流入 - item.主力净流出; // 使用净流入减去净流出
+                        // 根据实际数据结构调整计算逻辑
+                        // 直接使用主力净流入值，正数表示净流入，负数表示净流出
+                        const netFlow = item.主力净流入; 
                         const netFlowClass = netFlow >= 0 ? 'positive' : 'negative';
                         
                         moneyFlowHTML += `
