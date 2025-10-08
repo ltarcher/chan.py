@@ -26,6 +26,7 @@ except ImportError:
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import StockMCP.mcp_index as index
 import StockMCP.mcp_option_qvix as option_qvix
+import StockMCP.mcp_money as money
 
 class RealtimeMonitor:
     def __init__(self, codes, data_src=DATA_SRC.QSTOCK, debug=False, generate_visualization=True, 
@@ -833,15 +834,65 @@ class RealtimeMonitor:
             self.broadcast_websocket_message(json_message)
 
     def get_special_indicators(self):
+        if not self.enable_websocket:
+            return
+        
+        special_data = {}
         # 获取所有股票的成交量、资金流入流出、两融数据、两融占比成交等
 
         # 市场当前总成交
-        turnover = index.data_service.get_board_trade_realtime_data()
+        special_data["市场当前总成交"] = index.data_service.get_board_trade_realtime_data()
 
-        # 资金流入流出
+        special_data["市场历史总成交数据"] = index.data_service.get_turnover_history_data(start_date=(datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d"))
 
         # 两融数据
+        special_data["融资融券成交比例"] = index.data_service.get_rzrq_turnover_ratio(start_date=(datetime.now() - timedelta(days=365)).strftime("%Y-%m-%d"),
+                                                                                    page_size=365)
 
+        # 资金流入流出
+        special_data["市场资金流入流出"] = asyncio.run(money.get_realtime_index_money())
+
+        # 通过websocket广播数据
+        special_update = {
+            "type": "special_data_update",
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": special_data
+        }
+        
+        try:
+            # 清理数据中的NaN值，确保可以序列化为JSON
+            cleaned_data = self._clean_data(special_update)
+            json_message = json.dumps(cleaned_data, ensure_ascii=False)
+            print(f"广播特殊指标数据到WebSocket客户端: {json_message}")
+            self.broadcast_websocket_message(json_message)
+        except Exception as e:
+            print(f"广播特殊指标数据失败: {e}")
+
+    def _clean_data(self, obj):
+        """
+        清理数据中的NaN值，确保可以序列化为JSON
+        """
+        import math
+        
+        if isinstance(obj, dict):
+            return {key: self._clean_data(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_data(item) for item in obj]
+        elif isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+            return obj
+        elif isinstance(obj, (int, type(None))):
+            return obj
+        else:
+            # 尝试将numpy数值类型转换为Python原生类型
+            try:
+                if hasattr(obj, 'item'):
+                    return self._clean_data(obj.item())
+                else:
+                    return str(obj)
+            except:
+                return str(obj)
 
     def get_options_volatility_data(self):
         """获取期权波动率数据并广播到WebSocket客户端"""
