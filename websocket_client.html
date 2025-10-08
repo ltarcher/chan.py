@@ -604,12 +604,12 @@
             
             init() {
                 this.connect();
-                // 每30秒尝试重连一次
+                // 每3秒检查连接状态并尝试重连（如果未连接）
                 setInterval(() => {
                     if (!this.isConnected) {
                         this.connect();
                     }
-                }, 30000);
+                }, 3000);
             }
             
             // 清理包含无效值的数据
